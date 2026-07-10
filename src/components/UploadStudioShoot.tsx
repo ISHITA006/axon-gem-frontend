@@ -1,76 +1,68 @@
 import { useEffect, useState } from "react";
 import { ImageIcon, Loader2, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { apiCreateCatalogueItem, apiCreateStudioShoot, apiGetNextStudioShootCode, getPresignedUrl } from "@/lib/api";
+import {
+  apiCreateStudioShoot,
+  apiListProductBrandKits,
+  getPresignedUrl,
+  TRY_ON_ASPECT_RATIOS,
+  TRY_ON_OUTPUT_QUALITIES,
+  type ProductBrandKitRecord,
+  type StudioShootResult,
+  type TryOnAspectRatio,
+  type TryOnOutputQuality,
+} from "@/lib/api";
+import StudioShootResults from "@/components/StudioShootResults";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
-import {
-  AGE_OPTIONS,
-  DESIGN_OPTIONS,
-  GENDER_OPTIONS,
-  JEWELLERY_TYPE_OPTIONS,
-  METAL_OPTIONS,
-  METAL_PURITY_OPTIONS,
-  SETTING_TYPE_OPTIONS,
-  STONE_CUT_OPTIONS,
-  STONE_TYPE_OPTIONS,
-} from "@/components/catalogue/constants";
-
-const FIXED_CATEGORY = "Studio Shoot";
-
-type FormState = {
-  name: string;
-  description: string;
-  jewelleryType: string;
-  itemCode: string;
-  gender: string;
-  age: string;
-  metal: string;
-  metalPurity: string;
-  metalWeightGrams: string;
-  stoneType: string;
-  stoneCut: string;
-  stoneCount: string;
-  stoneCarat: string;
-  settingType: string;
-  design: string;
-};
-
-const EMPTY_FORM: FormState = {
-  name: "",
-  description: "",
-  jewelleryType: "",
-  itemCode: "",
-  gender: "",
-  age: "",
-  metal: "",
-  metalPurity: "",
-  metalWeightGrams: "",
-  stoneType: "",
-  stoneCut: "",
-  stoneCount: "",
-  stoneCarat: "",
-  settingType: "",
-  design: "",
-};
 
 export default function UploadStudioShoot() {
   const { token } = useAuth();
   const { toast } = useToast();
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [shooting, setShooting] = useState(false);
-  const [codeLoading, setCodeLoading] = useState(false);
+  const [sideViewFile, setSideViewFile] = useState<File | null>(null);
+  const [generateSideView, setGenerateSideView] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<TryOnAspectRatio>("2:3");
+  const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("2K");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [studioImageUrl, setStudioImageUrl] = useState<string | null>(null);
-  const [studioImageS3Key, setStudioImageS3Key] = useState<string | null>(null);
+  const [sidePreviewUrl, setSidePreviewUrl] = useState<string | null>(null);
+  const [shooting, setShooting] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<StudioShootResult | null>(null);
+
+  const NO_BRAND_KIT = "none";
+  const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
+  const [selectedBrandKitUid, setSelectedBrandKitUid] = useState<string>(NO_BRAND_KIT);
+  const [ensureWhiteBackground, setEnsureWhiteBackground] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    apiListProductBrandKits(token)
+      .then((kits) => {
+        setBrandKits(kits);
+        if (ensureWhiteBackground) return;
+        const active = kits.find((kit) => kit.is_active);
+        if (active) setSelectedBrandKitUid(active.uid);
+      })
+      .catch(() => {
+        // Product brand kits are optional — silently ignore load failures.
+      });
+  }, [token, ensureWhiteBackground]);
+
+  const handleEnsureWhiteBackgroundChange = (checked: boolean) => {
+    setEnsureWhiteBackground(checked);
+    if (checked) {
+      setSelectedBrandKitUid(NO_BRAND_KIT);
+      return;
+    }
+    const active = brandKits.find((kit) => kit.is_active);
+    if (active) setSelectedBrandKitUid(active.uid);
+  };
 
   useEffect(() => {
     if (!imageFile) {
@@ -97,178 +89,332 @@ export default function UploadStudioShoot() {
     };
   }, [imageFile]);
 
-  const loadNextStudioShootCode = async () => {
-    if (!token) return;
-    setCodeLoading(true);
-    try {
-      const data = await apiGetNextStudioShootCode(token);
-      setForm((prev) => ({ ...prev, itemCode: data.code || "" }));
-    } catch (err: unknown) {
-      toast({
-        title: "Could not fetch item code",
-        description: err instanceof Error ? err.message : "Please try again.",
-        variant: "destructive",
+  useEffect(() => {
+    if (!sideViewFile) {
+      setSidePreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    void createDisplayableImageObjectUrl(sideViewFile)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrl = url;
+        setSidePreviewUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setSidePreviewUrl(null);
       });
-    } finally {
-      setCodeLoading(false);
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [sideViewFile]);
+
+  const handleGenerateSideViewChange = (checked: boolean) => {
+    setGenerateSideView(checked);
+    if (!checked) {
+      setSideViewFile(null);
     }
   };
 
-  useEffect(() => {
-    loadNextStudioShootCode();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  const handleCreateStudioShoot = async () => {
+  const handleGenerate = async () => {
     if (!token) return;
     if (!imageFile) {
-      toast({ title: "Image required", description: "Please upload a raw jewellery image first.", variant: "destructive" });
+      toast({
+        title: "Image required",
+        description: "Please upload a raw jewellery image first.",
+        variant: "destructive",
+      });
       return;
     }
+
     setShooting(true);
+    setShowResults(true);
+    setResults(null);
+
     try {
-      const shot = await apiCreateStudioShoot(token, imageFile);
-      if (!shot.imageS3Key) {
-        throw new Error("Studio shoot image key not returned from API");
+      const shot = await apiCreateStudioShoot(token, imageFile, {
+        generateSideView,
+        sideViewFile: generateSideView ? sideViewFile : null,
+        aspectRatio,
+        outputQuality,
+        brandKitUid: ensureWhiteBackground ? null : selectedBrandKitUid,
+      });
+      if (!shot.frontImageS3Key) {
+        throw new Error("Front studio shoot image key not returned from API");
       }
-      let nextUrl = shot.imageUrl;
-      if (!nextUrl) {
-        nextUrl = await getPresignedUrl(token, shot.imageS3Key);
+
+      let frontUrl = shot.frontImageUrl;
+      if (!frontUrl) {
+        frontUrl = await getPresignedUrl(token, shot.frontImageS3Key);
       }
-      setStudioImageS3Key(shot.imageS3Key);
-      setStudioImageUrl(nextUrl);
-      toast({ title: "Studio shoot ready", description: "The studio product shot is ready to save." });
+
+      let sideUrl = shot.sideImageUrl ?? null;
+      if (shot.sideImageS3Key && !sideUrl) {
+        sideUrl = await getPresignedUrl(token, shot.sideImageS3Key);
+      }
+
+      setResults({
+        ...shot,
+        frontImageUrl: frontUrl,
+        sideImageUrl: sideUrl,
+      });
+
+      if (shot.status === "partial" && shot.sideError) {
+        toast({
+          title: "Partial success",
+          description: "Front view is ready, but the side view could not be generated.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Studio shoot ready",
+          description: generateSideView
+            ? "Front and side studio shots are ready."
+            : "Front studio shot is ready.",
+        });
+      }
     } catch (err: unknown) {
-      setStudioImageS3Key(null);
-      setStudioImageUrl(null);
-      toast({ title: "Studio shoot failed", description: err instanceof Error ? err.message : "Could not create studio shoot", variant: "destructive" });
+      setResults(null);
+      setShowResults(false);
+      toast({
+        title: "Studio shoot failed",
+        description: err instanceof Error ? err.message : "Could not create studio shoot",
+        variant: "destructive",
+      });
     } finally {
       setShooting(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token) return;
-    if (!imageFile) return toast({ title: "Image required", description: "Please upload a raw jewellery image.", variant: "destructive" });
-    if (!studioImageS3Key) return toast({ title: "Studio shoot required", description: "Please click Create studio shoot before saving.", variant: "destructive" });
-    if (!form.name.trim()) return toast({ title: "Name required", description: "Please enter a catalogue item name.", variant: "destructive" });
-    if (!form.gender) return toast({ title: "Gender required", description: "Please select a gender.", variant: "destructive" });
-    if (!form.age) return toast({ title: "Age required", description: "Please select an age.", variant: "destructive" });
-    if (!form.jewelleryType) return toast({ title: "Jewellery type required", description: "Please select a jewellery type.", variant: "destructive" });
-    if (!form.itemCode.trim()) return toast({ title: "Item code required", description: "Please enter an item code.", variant: "destructive" });
-    if (!form.metal) return toast({ title: "Metal required", description: "Please select a metal.", variant: "destructive" });
-    if (!form.settingType) return toast({ title: "Setting type required", description: "Please select a setting type.", variant: "destructive" });
-    if (!form.design) return toast({ title: "Design required", description: "Please select a design.", variant: "destructive" });
-
-    setSubmitting(true);
-    try {
-      await apiCreateCatalogueItem(token, {
-        name: form.name.trim(),
-        jewelleryType: form.jewelleryType,
-        category: FIXED_CATEGORY,
-        itemCode: form.itemCode.trim(),
-        gender: form.gender,
-        age: form.age,
-        metal: form.metal,
-        settingType: form.settingType,
-        design: form.design,
-        imageS3Keys: [studioImageS3Key],
-        description: form.description.trim() || undefined,
-        metalPurity: form.metalPurity || undefined,
-        metalWeightGrams: form.metalWeightGrams.trim() || undefined,
-        stoneType: form.stoneType || undefined,
-        stoneCut: form.stoneCut || undefined,
-        stoneCount: form.stoneCount.trim() || undefined,
-        stoneCarat: form.stoneCarat.trim() || undefined,
-      });
-      toast({ title: "Added to catalogue", description: `"${form.name.trim()}" was created.` });
-      setForm(EMPTY_FORM);
-      setImageFile(null);
-      setStudioImageS3Key(null);
-      setStudioImageUrl(null);
-      await loadNextStudioShootCode();
-    } catch (err: unknown) {
-      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Could not create studio shoot", variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
+  const handleBack = () => {
+    setShowResults(false);
+    setResults(null);
   };
+
+  if (showResults) {
+    return (
+      <StudioShootResults
+        loading={shooting}
+        results={results}
+        onBack={handleBack}
+        token={token}
+      />
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Studio Shoot</CardTitle>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {studioImageUrl ? (
-            <div className="space-y-2">
-              <Label>Studio shoot image *</Label>
-              <div className="rounded-lg border bg-muted/20 p-3">
-                <img src={studioImageUrl} alt="Studio shoot" className="max-h-64 rounded object-contain" />
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label>Raw jewellery image *</Label>
-                <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-6 transition hover:border-primary/50 hover:bg-muted/40">
-                  {previewUrl ? (
-                    <img src={previewUrl} alt="Raw jewellery preview" className="max-h-64 rounded object-contain" />
-                  ) : (
-                    <>
-                      <ImageIcon className="mb-2 h-10 w-10 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Click to upload image</span>
-                    </>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*,.heic,.heif"
-                    className="hidden"
-                    onChange={(e) => {
-                      setImageFile(e.target.files?.[0] || null);
-                      setStudioImageS3Key(null);
-                      setStudioImageUrl(null);
-                    }}
-                  />
-                </label>
-              </div>
-
-              <div className="space-y-2">
-                <Button type="button" variant="secondary" className="gap-2" onClick={handleCreateStudioShoot} disabled={!token || !imageFile || shooting}>
-                  {shooting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {shooting ? "Creating studio shoot..." : "Create studio shoot"}
-                </Button>
-                <p className="text-xs text-muted-foreground">A clean studio product shot is required before saving to catalogue.</p>
-              </div>
-            </>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="cat-category">Category *</Label><Input id="cat-category" value={FIXED_CATEGORY} disabled /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="cat-jewellery-type">Jewellery type *</Label><Select value={form.jewelleryType || undefined} onValueChange={(v) => setForm((f) => ({ ...f, jewelleryType: v }))}><SelectTrigger id="cat-jewellery-type"><SelectValue placeholder="Select jewellery type" /></SelectTrigger><SelectContent>{JEWELLERY_TYPE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="cat-item-code">Item code *</Label><Input id="cat-item-code" value={form.itemCode} disabled required placeholder={codeLoading ? "Loading..." : ""} /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="cat-name">Name *</Label><Input id="cat-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Product name" required /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="cat-desc">Description</Label><Textarea id="cat-desc" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Optional" rows={3} className="resize-y min-h-[72px]" /></div>
-            <div className="space-y-2"><Label htmlFor="cat-gender">Gender *</Label><Select value={form.gender || undefined} onValueChange={(v) => setForm((f) => ({ ...f, gender: v }))}><SelectTrigger id="cat-gender"><SelectValue placeholder="Select gender" /></SelectTrigger><SelectContent>{GENDER_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-age">Age *</Label><Select value={form.age || undefined} onValueChange={(v) => setForm((f) => ({ ...f, age: v }))}><SelectTrigger id="cat-age"><SelectValue placeholder="Select age" /></SelectTrigger><SelectContent>{AGE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-metal">Metal *</Label><Select value={form.metal || undefined} onValueChange={(v) => setForm((f) => ({ ...f, metal: v }))}><SelectTrigger id="cat-metal"><SelectValue placeholder="Select metal" /></SelectTrigger><SelectContent>{METAL_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-metal-purity">Metal purity</Label><Select value={form.metalPurity || undefined} onValueChange={(v) => setForm((f) => ({ ...f, metalPurity: v }))}><SelectTrigger id="cat-metal-purity"><SelectValue placeholder="Select metal purity" /></SelectTrigger><SelectContent>{METAL_PURITY_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-metal-weight">Metal weight (g)</Label><Input id="cat-metal-weight" value={form.metalWeightGrams} onChange={(e) => setForm((f) => ({ ...f, metalWeightGrams: e.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="cat-setting-type">Setting type *</Label><Select value={form.settingType || undefined} onValueChange={(v) => setForm((f) => ({ ...f, settingType: v }))}><SelectTrigger id="cat-setting-type"><SelectValue placeholder="Select setting type" /></SelectTrigger><SelectContent>{SETTING_TYPE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="cat-design">Design *</Label><Select value={form.design || undefined} onValueChange={(v) => setForm((f) => ({ ...f, design: v }))}><SelectTrigger id="cat-design"><SelectValue placeholder="Select design" /></SelectTrigger><SelectContent>{DESIGN_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-stone-type">Stone type</Label><Select value={form.stoneType || undefined} onValueChange={(v) => setForm((f) => ({ ...f, stoneType: v }))}><SelectTrigger id="cat-stone-type"><SelectValue placeholder="Select stone type" /></SelectTrigger><SelectContent>{STONE_TYPE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-stone-cut">Stone cut</Label><Select value={form.stoneCut || undefined} onValueChange={(v) => setForm((f) => ({ ...f, stoneCut: v }))}><SelectTrigger id="cat-stone-cut"><SelectValue placeholder="Select stone cut" /></SelectTrigger><SelectContent>{STONE_CUT_OPTIONS.map((opt) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="cat-stone-count">Stone count</Label><Input id="cat-stone-count" value={form.stoneCount} onChange={(e) => setForm((f) => ({ ...f, stoneCount: e.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="cat-stone-carat">Stone carat</Label><Input id="cat-stone-carat" value={form.stoneCarat} onChange={(e) => setForm((f) => ({ ...f, stoneCarat: e.target.value }))} /></div>
+      <CardContent className="space-y-6">
+        {/* Reference images */}
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium">Reference images</p>
+            <p className="text-xs text-muted-foreground">
+              Upload raw photos of the jewellery piece
+            </p>
           </div>
 
-          <Button type="submit" className="w-full gap-2" disabled={!token || submitting || !studioImageS3Key}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {submitting ? "Saving..." : "Save to catalogue"}
-          </Button>
-        </form>
+          <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="front-view-upload">Front view *</Label>
+              <label
+                id="front-view-upload"
+                className="flex min-h-[220px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-6 transition hover:border-primary/50 hover:bg-muted/40"
+              >
+                {previewUrl ? (
+                  <img src={previewUrl} alt="Front view preview" className="max-h-48 w-full rounded object-contain" />
+                ) : (
+                  <>
+                    <ImageIcon className="mb-2 h-10 w-10 text-muted-foreground" />
+                    <span className="text-center text-sm text-muted-foreground">
+                      Click to upload front view
+                    </span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*,.heic,.heif"
+                  className="hidden"
+                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label
+                htmlFor={generateSideView ? "side-view-upload" : "generate-side-view"}
+                className={generateSideView ? undefined : "text-muted-foreground"}
+              >
+                Side view{generateSideView ? " (optional reference)" : ""}
+              </Label>
+              <div className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-lg border bg-muted/20">
+                {generateSideView && (
+                  <label
+                    id="side-view-upload"
+                    className="flex flex-1 cursor-pointer flex-col items-center justify-center border-b border-dashed border-muted-foreground/25 bg-muted/20 p-4 transition hover:border-primary/50 hover:bg-muted/40"
+                  >
+                      {sidePreviewUrl ? (
+                        <img
+                          src={sidePreviewUrl}
+                          alt="Side view preview"
+                          className="max-h-36 w-full rounded object-contain"
+                        />
+                      ) : (
+                        <>
+                          <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground" />
+                          <span className="text-center text-sm text-muted-foreground">
+                            Click to upload side view
+                          </span>
+                          <span className="mt-1 text-center text-xs text-muted-foreground">
+                            Improves profile-shot accuracy
+                          </span>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*,.heic,.heif"
+                        className="hidden"
+                        onChange={(e) => setSideViewFile(e.target.files?.[0] || null)}
+                      />
+                    </label>
+                )}
+
+                <div
+                  className={
+                    generateSideView
+                      ? "flex shrink-0 items-start gap-3 px-4 py-3"
+                      : "flex flex-1 items-center gap-3 px-4 py-6"
+                  }
+                >
+                  <Checkbox
+                    id="generate-side-view"
+                    checked={generateSideView}
+                    onCheckedChange={(checked) => handleGenerateSideViewChange(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="generate-side-view" className="cursor-pointer text-sm leading-snug">
+                      Also generate side view
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Adds a profile studio shot alongside the front hero image.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Output settings */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Output settings</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="studioOutputQuality" className="text-sm font-medium">
+                Output quality
+              </Label>
+              <Select
+                value={outputQuality}
+                onValueChange={(v) => setOutputQuality(v as TryOnOutputQuality)}
+              >
+                <SelectTrigger id="studioOutputQuality">
+                  <SelectValue placeholder="Quality" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRY_ON_OUTPUT_QUALITIES.map((quality) => (
+                    <SelectItem key={quality} value={quality}>
+                      {quality}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="studioAspectRatio" className="text-sm font-medium">
+                Aspect ratio
+              </Label>
+              <Select
+                value={aspectRatio}
+                onValueChange={(v) => setAspectRatio(v as TryOnAspectRatio)}
+              >
+                <SelectTrigger id="studioAspectRatio">
+                  <SelectValue placeholder="Aspect ratio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRY_ON_ASPECT_RATIOS.map((ratio) => (
+                    <SelectItem key={ratio} value={ratio}>
+                      {ratio}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="productBrandKit" className="text-sm font-medium">
+              Product brand kit
+            </Label>
+            <Select
+              value={selectedBrandKitUid}
+              onValueChange={setSelectedBrandKitUid}
+              disabled={ensureWhiteBackground}
+            >
+              <SelectTrigger id="productBrandKit">
+                <SelectValue placeholder="No brand kit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_BRAND_KIT}>No brand kit</SelectItem>
+                {brandKits.map((kit) => (
+                  <SelectItem key={kit.uid} value={kit.uid}>
+                    {kit.name}
+                    {kit.is_active ? " (active)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Applies your brand's camera style, background and jewellery placement to the result.
+            </p>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
+            <Checkbox
+              id="ensure-white-background"
+              checked={ensureWhiteBackground}
+              onCheckedChange={(checked) => handleEnsureWhiteBackgroundChange(checked === true)}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor="ensure-white-background" className="cursor-pointer text-sm leading-snug">
+                Ensure white studio background
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Uses the default clean white studio look and skips any product brand kit styling.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          className="w-full gap-2"
+          onClick={handleGenerate}
+          disabled={!token || !imageFile || shooting}
+        >
+          {shooting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {shooting ? "Generating studio shoot..." : "Generate studio shoot"}
+        </Button>
       </CardContent>
     </Card>
   );

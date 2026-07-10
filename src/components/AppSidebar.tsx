@@ -17,6 +17,8 @@ import {
   LucideCamera,
   SwitchCamera,
   Palette,
+  SquareUser,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +37,6 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export type TabValue =
   | "tryon"
-  | "shoot"
   | "colour"
   | "length"
   | "embroideryPrint"
@@ -51,17 +52,18 @@ export type TabValue =
   | "catalogViewerManagement"
   | "editImage"
   | "generateNewDesigns"
-  | "brandKit";
+  | "brandKit"
+  | "productBrandKit";
 
 const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = [
-  { title: "Studio Shoot", value: "uploadStudioShoot", icon: Camera },
-  { title: "Brand Kit", value: "brandKit", icon: Palette },
-  { title: "Model Try On", value: "tryon", icon: Gem },
-  { title: "Model Shoot", value: "shoot", icon: SwitchCamera },
+  { title: "Model Shoot", value: "tryon", icon: SquareUser },
+  { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
+  { title: "Model Video", value: "video", icon: Video },
   { title: "Edit Image", value: "editImage", icon: Wand2 },
+  { title: "Model Brand Kit", value: "brandKit", icon: Palette },
+  { title: "Product Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
   { title: "Generate New Designs", value: "generateNewDesigns", icon: Sparkles },
   { title: "Change Embroidery / Print", value: "embroideryPrint", icon: Paintbrush },
-  { title: "Try On Video", value: "video", icon: Video },
   { title: "My Gallery", value: "gallery", icon: Images },
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
   { title: "Manage Models", value: "models", icon: Users },

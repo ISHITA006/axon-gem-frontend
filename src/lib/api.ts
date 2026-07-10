@@ -1061,10 +1061,45 @@ async function compressImageForStudioShoot(file: File, strict: boolean): Promise
   });
 }
 
-export async function apiCreateStudioShoot(token: string, jewelleryFile: File) {
-  const postStudioShootRequest = async (file: File) => {
+export type StudioShootResult = {
+  status: "success" | "partial";
+  frontImageS3Key: string;
+  frontImageUrl: string;
+  sideImageS3Key?: string | null;
+  sideImageUrl?: string | null;
+  sideError?: string | null;
+};
+
+export type ApiCreateStudioShootOptions = {
+  generateSideView?: boolean;
+  sideViewFile?: File | null;
+  aspectRatio?: TryOnAspectRatio;
+  outputQuality?: TryOnOutputQuality;
+  brandKitUid?: string | null;
+};
+
+export async function apiCreateStudioShoot(
+  token: string,
+  jewelleryFile: File,
+  options?: ApiCreateStudioShootOptions,
+): Promise<StudioShootResult> {
+  const generateSideView = options?.generateSideView ?? false;
+
+  const postStudioShootRequest = async (frontFile: File, sideFile?: File | null) => {
     const formData = new FormData();
-    formData.append("garment_file", file);
+    formData.append("garment_file", frontFile);
+    formData.append("generate_side_view", generateSideView ? "true" : "false");
+    formData.append("aspect_ratio", options?.aspectRatio ?? "2:3");
+    formData.append("output_quality", options?.outputQuality ?? "2K");
+    const brandKitUid = options?.brandKitUid;
+    if (brandKitUid === null) {
+      formData.append("brand_kit_uid", "none");
+    } else if (brandKitUid?.trim()) {
+      formData.append("brand_kit_uid", brandKitUid.trim());
+    }
+    if (generateSideView && sideFile) {
+      formData.append("side_view_file", sideFile);
+    }
     return fetch(`${API_BASE_URL}/create-studio-shoot`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
@@ -1073,7 +1108,11 @@ export async function apiCreateStudioShoot(token: string, jewelleryFile: File) {
   };
 
   const preparedFile = await compressImageForStudioShoot(jewelleryFile, false);
-  let res = await postStudioShootRequest(preparedFile);
+  const preparedSideFile =
+    generateSideView && options?.sideViewFile
+      ? await compressImageForStudioShoot(options.sideViewFile, false)
+      : null;
+  let res = await postStudioShootRequest(preparedFile, preparedSideFile);
 
   if (!res.ok) {
     const errMessage = await parseApiErrorMessage(res, "Failed to create studio shoot");
@@ -1082,7 +1121,11 @@ export async function apiCreateStudioShoot(token: string, jewelleryFile: File) {
 
     if (isPayloadTooLarge) {
       const strictFile = await compressImageForStudioShoot(preparedFile, true);
-      res = await postStudioShootRequest(strictFile);
+      const strictSideFile =
+        preparedSideFile != null
+          ? await compressImageForStudioShoot(preparedSideFile, true)
+          : null;
+      res = await postStudioShootRequest(strictFile, strictSideFile);
       if (!res.ok) {
         const strictErr = await parseApiErrorMessage(res, "Failed to create studio shoot");
         throw new Error(
@@ -1097,6 +1140,12 @@ export async function apiCreateStudioShoot(token: string, jewelleryFile: File) {
   }
 
   const data = (await res.json()) as {
+    status?: "success" | "partial";
+    front_image_s3_key?: string;
+    front_image_url?: string;
+    side_image_s3_key?: string | null;
+    side_image_url?: string | null;
+    side_error?: string | null;
     cleaned_image_s3_key?: string;
     image_s3_key?: string;
     s3_key?: string;
@@ -1105,9 +1154,18 @@ export async function apiCreateStudioShoot(token: string, jewelleryFile: File) {
     url?: string;
   };
 
+  const frontImageS3Key =
+    data.front_image_s3_key ?? data.cleaned_image_s3_key ?? data.image_s3_key ?? data.s3_key ?? "";
+  const frontImageUrl =
+    data.front_image_url ?? data.preview_url ?? data.image_url ?? data.url ?? "";
+
   return {
-    imageS3Key: data.cleaned_image_s3_key ?? data.image_s3_key ?? data.s3_key ?? "",
-    imageUrl: data.preview_url ?? data.image_url ?? data.url ?? null,
+    status: data.status ?? "success",
+    frontImageS3Key,
+    frontImageUrl,
+    sideImageS3Key: data.side_image_s3_key ?? null,
+    sideImageUrl: data.side_image_url ?? null,
+    sideError: data.side_error ?? null,
   };
 }
 
@@ -1235,35 +1293,6 @@ export async function apiChangeProductLength(
   });
   await assertOk(res, "Failed to change length");
   return res.json();
-}
-
-export async function apiGenerateTryOnPoseBg(
-  token: string,
-  clothingFile: File,
-  modelS3Key: string,
-  backgroundS3Key?: string | null,
-  poseSelected = false
-): Promise<Record<string, unknown>> {
-  const params = new URLSearchParams({
-    model_s3_key: modelS3Key,
-  });
-  if (backgroundS3Key) {
-    params.append("background_s3_key", backgroundS3Key);
-  }
-
-  const formData = new FormData();
-  formData.append("clothing_file", await asUploadableImage(clothingFile));
-  formData.append("pose_selected", poseSelected ? "true" : "false");
-
-  const res = await fetch(`${API_BASE_URL}/generate-try-on-pose-bg?${params.toString()}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  await assertOk(res, "Generation failed");
-
-  return res.json() as Promise<Record<string, unknown>>;
 }
 
 function extractS3KeyFromUnknown(item: unknown): string | null {
@@ -1640,4 +1669,84 @@ export async function apiDeleteBrandKit(token: string, uid: string) {
     headers: { Authorization: `Bearer ${token}` },
   });
   await assertOk(res, "Failed to delete brand kit");
+}
+
+// ── Product Brand Kit ────────────────────────────────────────────────────────
+
+export type ProductBrandKitAnalysis = {
+  overall_vibe?: string;
+  shoot_style?: string;
+  camera_style?: string;
+  background_settings?: string;
+  jewellery_placement?: string;
+  colour_palette?: string;
+  lighting?: string;
+  theme_context?: string;
+};
+
+export type ProductBrandKitRecord = {
+  uid: string;
+  name: string;
+  description: string | null;
+  image_s3_keys: string[];
+  analysis: ProductBrandKitAnalysis | null;
+  theme_context: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function apiCreateProductBrandKit(
+  token: string,
+  payload: { name: string; description?: string; setActive?: boolean; files: File[] }
+) {
+  const formData = new FormData();
+  formData.append("name", payload.name);
+  if (payload.description?.trim()) formData.append("description", payload.description.trim());
+  formData.append("set_active", payload.setActive === false ? "false" : "true");
+  const prepared = await Promise.all(payload.files.map((file) => asUploadableImage(file)));
+  prepared.forEach((file) => formData.append("files", file));
+
+  const res = await fetch(`${API_BASE_URL}/product-brand-kit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  await assertOk(res, "Failed to create product brand kit");
+  return res.json() as Promise<ProductBrandKitRecord>;
+}
+
+export async function apiListProductBrandKits(token: string) {
+  const res = await fetch(`${API_BASE_URL}/product-brand-kit`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch product brand kits");
+  return res.json() as Promise<ProductBrandKitRecord[]>;
+}
+
+export async function apiActivateProductBrandKit(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-brand-kit/${encodeURIComponent(uid)}/activate`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to activate product brand kit");
+  return res.json() as Promise<ProductBrandKitRecord>;
+}
+
+export async function apiDeactivateProductBrandKit(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-brand-kit/${encodeURIComponent(uid)}/deactivate`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to deactivate product brand kit");
+  return res.json() as Promise<ProductBrandKitRecord>;
+}
+
+export async function apiDeleteProductBrandKit(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-brand-kit/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to delete product brand kit");
 }

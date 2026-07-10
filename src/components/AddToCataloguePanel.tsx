@@ -35,6 +35,7 @@ type Props = {
   token: string | null;
   analysis: TryOnAnalysis | null | undefined;
   images: ImageItem[];
+  formOverrides?: Partial<CatalogueForm>;
 };
 
 type CatalogueForm = {
@@ -70,24 +71,30 @@ function pickEnum<T extends string>(options: readonly T[], v: unknown): T | "" {
   return match ?? "";
 }
 
-function buildCatalogueDefaults(analysis: TryOnAnalysis | null | undefined): CatalogueForm {
+function buildCatalogueDefaults(
+  analysis: TryOnAnalysis | null | undefined,
+  formOverrides?: Partial<CatalogueForm>,
+): CatalogueForm {
   return {
-    name: analysis?.name || "",
-    description: analysis?.description || "",
-    jewelleryType: pickEnum(JEWELLERY_TYPE_OPTIONS, analysis?.jewellery_type),
-    category: pickEnum(CATEGORY_OPTIONS, ""),
-    itemCode: analysis?.item_code || "",
-    gender: pickEnum(GENDER_OPTIONS, analysis?.gender),
-    age: pickEnum(AGE_OPTIONS, analysis?.age),
-    metal: pickEnum(METAL_OPTIONS, analysis?.metal),
-    metalPurity: pickEnum(METAL_PURITY_OPTIONS, analysis?.metal_purity),
-    metalWeightGrams: str(analysis?.metal_weight_grams),
-    stoneType: pickEnum(STONE_TYPE_OPTIONS, analysis?.stone_type),
-    stoneCut: pickEnum(STONE_CUT_OPTIONS, analysis?.stone_cut),
-    stoneCount: str(analysis?.stone_count),
-    stoneCarat: str(analysis?.stone_carat),
-    settingType: pickEnum(SETTING_TYPE_OPTIONS, analysis?.setting_type),
-    design: pickEnum(DESIGN_OPTIONS, analysis?.design),
+    ...{
+      name: analysis?.name || "",
+      description: analysis?.description || "",
+      jewelleryType: pickEnum(JEWELLERY_TYPE_OPTIONS, analysis?.jewellery_type),
+      category: pickEnum(CATEGORY_OPTIONS, ""),
+      itemCode: analysis?.item_code || "",
+      gender: pickEnum(GENDER_OPTIONS, analysis?.gender),
+      age: pickEnum(AGE_OPTIONS, analysis?.age),
+      metal: pickEnum(METAL_OPTIONS, analysis?.metal),
+      metalPurity: pickEnum(METAL_PURITY_OPTIONS, analysis?.metal_purity),
+      metalWeightGrams: str(analysis?.metal_weight_grams),
+      stoneType: pickEnum(STONE_TYPE_OPTIONS, analysis?.stone_type),
+      stoneCut: pickEnum(STONE_CUT_OPTIONS, analysis?.stone_cut),
+      stoneCount: str(analysis?.stone_count),
+      stoneCarat: str(analysis?.stone_carat),
+      settingType: pickEnum(SETTING_TYPE_OPTIONS, analysis?.setting_type),
+      design: pickEnum(DESIGN_OPTIONS, analysis?.design),
+    },
+    ...formOverrides,
   };
 }
 
@@ -112,7 +119,7 @@ async function getCroppedImageFile(imageSrc: string, cropPixels: Area, fileName:
   return new File([blob], fileName, { type: "image/jpeg" });
 }
 
-export default function AddToCataloguePanel({ token, analysis, images }: Props) {
+export default function AddToCataloguePanel({ token, analysis, images, formOverrides }: Props) {
   const { toast } = useToast();
   const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [catalogueSubmitting, setCatalogueSubmitting] = useState(false);
@@ -125,14 +132,14 @@ export default function AddToCataloguePanel({ token, analysis, images }: Props) 
   const [cropSaving, setCropSaving] = useState(false);
   const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [cropLoading, setCropLoading] = useState(false);
-  const [form, setForm] = useState<CatalogueForm>(buildCatalogueDefaults(analysis));
+  const [form, setForm] = useState<CatalogueForm>(buildCatalogueDefaults(analysis, formOverrides));
 
   const canOpen = Boolean(token && images.length);
   const previewUrls = useMemo(() => images.map((i) => i.url), [images]);
   const previewS3Keys = useMemo(() => images.map((i) => i.s3Key), [images]);
 
   const openCatalogue = () => {
-    setForm(buildCatalogueDefaults(analysis));
+    setForm(buildCatalogueDefaults(analysis, formOverrides));
     setCatalogueTarget({ imageUrls: previewUrls, s3Keys: previewS3Keys });
     setCatalogueOpen(true);
   };

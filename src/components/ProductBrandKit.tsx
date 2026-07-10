@@ -1,40 +1,37 @@
 import { useEffect, useState } from "react";
-import { Check, ImagePlus, Loader2, Palette, Sparkles, Star, Trash2, X } from "lucide-react";
+import { Check, Gem, ImagePlus, Loader2, Sparkles, Star, Trash2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  apiActivateBrandKit,
-  apiCreateBrandKit,
-  apiDeactivateBrandKit,
-  apiDeleteBrandKit,
-  apiListBrandKits,
+  apiActivateProductBrandKit,
+  apiCreateProductBrandKit,
+  apiDeactivateProductBrandKit,
+  apiDeleteProductBrandKit,
+  apiListProductBrandKits,
   getPresignedUrl,
-  type BrandKitRecord,
+  type ProductBrandKitRecord,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { createDisplayableImageObjectUrl, toBrowserDecodedImageFile } from "@/lib/heicImage";
 
 type Preview = { id: string; url: string; file: File };
 
-const THEME_FIELDS: { key: keyof NonNullable<BrandKitRecord["analysis"]>; label: string }[] = [
+const THEME_FIELDS: { key: keyof NonNullable<ProductBrandKitRecord["analysis"]>; label: string }[] = [
   { key: "overall_vibe", label: "Overall vibe" },
-  { key: "model_poses", label: "Model poses" },
   { key: "shoot_style", label: "Shoot style" },
-  { key: "camera_settings", label: "Camera settings" },
-  { key: "camera_positioning", label: "Camera positioning" },
-  { key: "shoot_angles", label: "Shoot angles" },
-  { key: "model_styling", label: "Model styling" },
+  { key: "camera_style", label: "Camera style" },
+  { key: "background_settings", label: "Background settings" },
+  { key: "jewellery_placement", label: "Jewellery placement" },
   { key: "colour_palette", label: "Colour palette" },
   { key: "lighting", label: "Lighting" },
 ];
 
-export default function BrandKit() {
+export default function ProductBrandKit() {
   const { token } = useAuth();
   const { toast } = useToast();
 
@@ -45,12 +42,11 @@ export default function BrandKit() {
   const [previews, setPreviews] = useState<Preview[]>([]);
   const [creating, setCreating] = useState(false);
 
-  const [kits, setKits] = useState<BrandKitRecord[]>([]);
+  const [kits, setKits] = useState<ProductBrandKitRecord[]>([]);
   const [kitsLoading, setKitsLoading] = useState(true);
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
   const [busyKitUid, setBusyKitUid] = useState<string | null>(null);
 
-  // Build displayable previews (handles HEIC) whenever the selected files change.
   useEffect(() => {
     let cancelled = false;
     const created: string[] = [];
@@ -81,7 +77,7 @@ export default function BrandKit() {
     if (!token) return;
     setKitsLoading(true);
     try {
-      const data = await apiListBrandKits(token);
+      const data = await apiListProductBrandKits(token);
       setKits(data);
       const entries = await Promise.all(
         data.map(async (kit) => {
@@ -98,7 +94,7 @@ export default function BrandKit() {
     } catch (err: unknown) {
       toast({
         title: "Error",
-        description: err instanceof Error ? err.message : "Failed to load brand kits",
+        description: err instanceof Error ? err.message : "Failed to load product brand kits",
         variant: "destructive",
       });
     } finally {
@@ -138,7 +134,7 @@ export default function BrandKit() {
   const handleCreate = async () => {
     if (!token) return;
     if (!name.trim()) {
-      toast({ title: "Name required", description: "Give your brand kit a name.", variant: "destructive" });
+      toast({ title: "Name required", description: "Give your product brand kit a name.", variant: "destructive" });
       return;
     }
     if (files.length === 0) {
@@ -151,21 +147,21 @@ export default function BrandKit() {
     }
     setCreating(true);
     try {
-      const kit = await apiCreateBrandKit(token, {
+      const kit = await apiCreateProductBrandKit(token, {
         name: name.trim(),
         description: description.trim() || undefined,
         setActive,
         files,
       });
       toast({
-        title: "Brand kit created",
+        title: "Product brand kit created",
         description: `"${kit.name}" analysed and ready${kit.is_active ? " — now active" : ""}.`,
       });
       resetForm();
       await loadKits();
     } catch (err: unknown) {
       toast({
-        title: "Could not create brand kit",
+        title: "Could not create product brand kit",
         description: err instanceof Error ? err.message : "Please try again.",
         variant: "destructive",
       });
@@ -174,14 +170,14 @@ export default function BrandKit() {
     }
   };
 
-  const handleToggleActive = async (kit: BrandKitRecord) => {
+  const handleToggleActive = async (kit: ProductBrandKitRecord) => {
     if (!token) return;
     setBusyKitUid(kit.uid);
     try {
       if (kit.is_active) {
-        await apiDeactivateBrandKit(token, kit.uid);
+        await apiDeactivateProductBrandKit(token, kit.uid);
       } else {
-        await apiActivateBrandKit(token, kit.uid);
+        await apiActivateProductBrandKit(token, kit.uid);
       }
       await loadKits();
     } catch (err: unknown) {
@@ -195,12 +191,12 @@ export default function BrandKit() {
     }
   };
 
-  const handleDelete = async (kit: BrandKitRecord) => {
+  const handleDelete = async (kit: ProductBrandKitRecord) => {
     if (!token) return;
-    if (!window.confirm(`Delete brand kit "${kit.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete product brand kit "${kit.name}"? This cannot be undone.`)) return;
     setBusyKitUid(kit.uid);
     try {
-      await apiDeleteBrandKit(token, kit.uid);
+      await apiDeleteProductBrandKit(token, kit.uid);
       toast({ title: "Deleted", description: `"${kit.name}" was removed.` });
       await loadKits();
     } catch (err: unknown) {
@@ -218,40 +214,39 @@ export default function BrandKit() {
     <div className="space-y-6">
       <div>
         <h2 className="flex items-center gap-2 text-xl font-semibold">
-          <Palette className="h-5 w-5" /> Model Brand Kit
+          <Gem className="h-5 w-5" /> Product Brand Kit
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload inspiration images that capture how you want your model shoots to look. We analyse
-          the poses, shoot style, camera work and styling, then apply that direction to your try-on
-          results.
+          Upload inspiration images that capture how you want your studio product shoots to look. We
+          analyse the camera style, background, jewellery placement and lighting, then apply that
+          direction to your product shoot results.
         </p>
       </div>
 
-      {/* Create form */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-4 w-4" /> Create a new brand kit
+            <Sparkles className="h-4 w-4" /> Create a new product brand kit
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="bk-name">Brand kit name *</Label>
+              <Label htmlFor="pbk-name">Brand kit name *</Label>
               <Input
-                id="bk-name"
+                id="pbk-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Summer Editorial 2026"
+                placeholder="e.g. Catalogue White Studio"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="bk-desc">Description</Label>
+              <Label htmlFor="pbk-desc">Description</Label>
               <Input
-                id="bk-desc"
+                id="pbk-desc"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional — a short note about this brand's vibe"
+                placeholder="Optional — a short note about this look"
               />
             </div>
           </div>
@@ -301,19 +296,18 @@ export default function BrandKit() {
               onChange={(e) => setSetActive(e.target.checked)}
               className="h-4 w-4 rounded border-muted-foreground/40"
             />
-            Set as active — apply this kit to every new try-on automatically
+            Set as active — apply this kit to every new product shoot automatically
           </label>
 
           <Button onClick={handleCreate} disabled={creating || !token} className="gap-2">
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {creating ? "Analysing inspiration…" : "Create brand kit"}
+            {creating ? "Analysing inspiration…" : "Create product brand kit"}
           </Button>
         </CardContent>
       </Card>
 
-      {/* Existing kits */}
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold">Your brand kits</h3>
+        <h3 className="text-sm font-semibold">Your product brand kits</h3>
         {kitsLoading ? (
           <div className="grid gap-4 md:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
@@ -323,9 +317,9 @@ export default function BrandKit() {
         ) : kits.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <Palette className="mb-3 h-12 w-12 text-muted-foreground/40" />
+              <Gem className="mb-3 h-12 w-12 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">
-                No brand kits yet. Create one above to guide your shoot results.
+                No product brand kits yet. Create one above to guide your studio shoot results.
               </p>
             </CardContent>
           </Card>

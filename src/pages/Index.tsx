@@ -5,7 +5,6 @@ import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Palette, Scissors } from "lucide-react";
 import ModelTryOn from "@/components/ModelTryOn";
-import ModelShoot from "@/components/ModelShoot";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
 import ManagePoses from "@/components/ManagePoses";
@@ -22,6 +21,7 @@ import EditImage from "@/components/EditImage";
 import ModelTryOnVideo from "@/components/ModelTryOnVideo";
 import GenerateNewDesigns from "@/components/GenerateNewDesigns";
 import BrandKit from "@/components/BrandKit";
+import ProductBrandKit from "@/components/ProductBrandKit";
 
 const MODEL_TRY_ON_VIDEO_FRONT_IMAGE_S3KEY_STORAGE_KEY = "auro:modelTryOnVideo:frontImageS3Key";
 
@@ -82,13 +82,6 @@ export default function Index() {
               <ModelTryOn
                 s3Key={tryOnJewellery?.s3Key}
                 imageUrl={tryOnJewellery?.imageUrl}
-                onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
-              />
-            )}
-            {activeTab === "shoot" && (
-              <ModelShoot
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
@@ -174,6 +167,7 @@ export default function Index() {
             )}
             {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
             {activeTab === "brandKit" && <BrandKit />}
+            {activeTab === "productBrandKit" && <ProductBrandKit />}
             {activeTab === "editImage" && (
               <EditImage
                 imageUrl={editImage?.imageUrl ?? null}
