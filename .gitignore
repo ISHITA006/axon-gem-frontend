@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 deps/
+bun.lock
+bun.lockb
 
 # Build output
 dist/
@@ -26,9 +28,6 @@ lerna-debug.log*
 coverage/
 .nyc_output/
 test-results/
-playwright-report/
-blob-report/
-playwright/.cache/
 
 # Caches
 .cache/
