@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 const MODEL_TRY_ON_VIDEO_FRONT_IMAGE_S3KEY_STORAGE_KEY = "auro:modelTryOnVideo:frontImageS3Key";
 
 const ASPECT_RATIO_OPTIONS: { value: "16:9" | "9:16"; label: string }[] = [
-  { value: "16:9", label: "16:9" },
+  { value: "16:9", label: "16:9 (required for adult try-on video)" },
   { value: "9:16", label: "9:16" },
 ];
 
@@ -49,7 +49,7 @@ export default function ModelTryOnVideo() {
   const [backgroundsLoading, setBackgroundsLoading] = useState(true);
   const [useBackground, setUseBackground] = useState(false);
 
-  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("9:16");
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [cameraStyle, setCameraStyle] = useState<VeoCameraStyle>("editorial");
   const [type, setType] = useState<"adult" | "child" | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -125,6 +125,12 @@ export default function ModelTryOnVideo() {
     if (useBackground) setUseBackground(false);
     if (selectedBackground) setSelectedBackground(null);
   }, [aspectRatio, backFile, backPreview, isChildType, selectedBackground, useBackground]);
+
+  useEffect(() => {
+    if (type === "adult" && aspectRatio !== "16:9") {
+      setAspectRatio("16:9");
+    }
+  }, [type, aspectRatio]);
 
   useEffect(() => {
     if (!token) return;
@@ -309,19 +315,27 @@ export default function ModelTryOnVideo() {
             <Select
               value={aspectRatio}
               onValueChange={(v) => setAspectRatio(v as "16:9" | "9:16")}
-              disabled={!isTypeSelected || isChildType}
+              disabled={!isTypeSelected || isChildType || type === "adult"}
             >
               <SelectTrigger id="veo-aspect-ratio">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ASPECT_RATIO_OPTIONS.map((o) => (
+                {(type === "adult"
+                  ? ASPECT_RATIO_OPTIONS.filter((o) => o.value === "16:9")
+                  : ASPECT_RATIO_OPTIONS
+                ).map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {type === "adult" && (
+              <p className="text-xs text-muted-foreground">
+                Only supports 16:9 aspect ratio for reference images.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="veo-camera">Camera style</Label>

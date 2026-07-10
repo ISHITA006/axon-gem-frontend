@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
@@ -39,6 +40,11 @@ export default function UploadStudioShoot() {
   const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
   const [selectedBrandKitUid, setSelectedBrandKitUid] = useState<string>(NO_BRAND_KIT);
   const [ensureWhiteBackground, setEnsureWhiteBackground] = useState(false);
+  const [useCustomBackground, setUseCustomBackground] = useState(false);
+  const [backgroundInputMode, setBackgroundInputMode] = useState<"description" | "image">("description");
+  const [backgroundText, setBackgroundText] = useState("");
+  const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
+  const [backgroundPreviewUrl, setBackgroundPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -58,10 +64,37 @@ export default function UploadStudioShoot() {
     setEnsureWhiteBackground(checked);
     if (checked) {
       setSelectedBrandKitUid(NO_BRAND_KIT);
+      setUseCustomBackground(false);
+      setBackgroundText("");
+      setBackgroundFile(null);
       return;
     }
     const active = brandKits.find((kit) => kit.is_active);
     if (active) setSelectedBrandKitUid(active.uid);
+  };
+
+  const handleUseCustomBackgroundChange = (checked: boolean) => {
+    setUseCustomBackground(checked);
+    if (checked) {
+      setEnsureWhiteBackground(false);
+      const active = brandKits.find((kit) => kit.is_active);
+      if (active && selectedBrandKitUid === NO_BRAND_KIT) {
+        setSelectedBrandKitUid(active.uid);
+      }
+      return;
+    }
+    setBackgroundText("");
+    setBackgroundFile(null);
+    setBackgroundInputMode("description");
+  };
+
+  const handleBackgroundInputModeChange = (mode: "description" | "image") => {
+    setBackgroundInputMode(mode);
+    if (mode === "description") {
+      setBackgroundFile(null);
+    } else {
+      setBackgroundText("");
+    }
   };
 
   useEffect(() => {
@@ -114,6 +147,31 @@ export default function UploadStudioShoot() {
     };
   }, [sideViewFile]);
 
+  useEffect(() => {
+    if (!backgroundFile) {
+      setBackgroundPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    void createDisplayableImageObjectUrl(backgroundFile)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrl = url;
+        setBackgroundPreviewUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setBackgroundPreviewUrl(null);
+      });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [backgroundFile]);
+
   const handleGenerateSideViewChange = (checked: boolean) => {
     setGenerateSideView(checked);
     if (!checked) {
@@ -132,6 +190,25 @@ export default function UploadStudioShoot() {
       return;
     }
 
+    if (useCustomBackground) {
+      if (backgroundInputMode === "description" && !backgroundText.trim()) {
+        toast({
+          title: "Background required",
+          description: "Enter a background description.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (backgroundInputMode === "image" && !backgroundFile) {
+        toast({
+          title: "Background required",
+          description: "Upload a background reference image.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setShooting(true);
     setShowResults(true);
     setResults(null);
@@ -143,6 +220,12 @@ export default function UploadStudioShoot() {
         aspectRatio,
         outputQuality,
         brandKitUid: ensureWhiteBackground ? null : selectedBrandKitUid,
+        backgroundText:
+          useCustomBackground && backgroundInputMode === "description"
+            ? backgroundText.trim()
+            : undefined,
+        backgroundFile:
+          useCustomBackground && backgroundInputMode === "image" ? backgroundFile : null,
       });
       if (!shot.frontImageS3Key) {
         throw new Error("Front studio shoot image key not returned from API");
@@ -384,15 +467,113 @@ export default function UploadStudioShoot() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Applies your brand's camera style, background and jewellery placement to the result.
+              {useCustomBackground
+                ? "Applies camera style and jewellery placement from your brand kit. Background comes from your custom input."
+                : "Applies your brand's camera style, background and jewellery placement to the result."}
             </p>
           </div>
+
+          <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
+            <Checkbox
+              id="use-custom-background"
+              checked={useCustomBackground}
+              onCheckedChange={(checked) => handleUseCustomBackgroundChange(checked === true)}
+              disabled={ensureWhiteBackground}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor="use-custom-background" className="cursor-pointer text-sm leading-snug">
+                Use custom background
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Choose either a description or a reference image for the backdrop. Brand kit
+                background styling is skipped; camera and placement still apply if a kit is selected.
+              </p>
+            </div>
+          </div>
+
+          {useCustomBackground && (
+            <div className="space-y-4 rounded-lg border bg-muted/10 p-4">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Background input</p>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="background-input-mode"
+                      checked={backgroundInputMode === "description"}
+                      onChange={() => handleBackgroundInputModeChange("description")}
+                      className="h-4 w-4"
+                    />
+                    Describe background
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="background-input-mode"
+                      checked={backgroundInputMode === "image"}
+                      onChange={() => handleBackgroundInputModeChange("image")}
+                      className="h-4 w-4"
+                    />
+                    Upload reference image
+                  </label>
+                </div>
+              </div>
+
+              {backgroundInputMode === "description" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="background-description" className="text-sm font-medium">
+                    Background description
+                  </Label>
+                  <Textarea
+                    id="background-description"
+                    value={backgroundText}
+                    onChange={(e) => setBackgroundText(e.target.value)}
+                    placeholder="e.g. Soft blush-pink silk fabric with gentle folds and a subtle contact shadow"
+                    rows={3}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="background-image-upload" className="text-sm font-medium">
+                    Background reference image
+                  </Label>
+                  <label
+                    id="background-image-upload"
+                    className="flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-4 transition hover:border-primary/50 hover:bg-muted/40"
+                  >
+                    {backgroundPreviewUrl ? (
+                      <img
+                        src={backgroundPreviewUrl}
+                        alt="Background preview"
+                        className="max-h-28 w-full rounded object-contain"
+                      />
+                    ) : (
+                      <>
+                        <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground" />
+                        <span className="text-center text-sm text-muted-foreground">
+                          Click to upload a background reference
+                        </span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,.heic,.heif"
+                      className="hidden"
+                      onChange={(e) => setBackgroundFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
             <Checkbox
               id="ensure-white-background"
               checked={ensureWhiteBackground}
               onCheckedChange={(checked) => handleEnsureWhiteBackgroundChange(checked === true)}
+              disabled={useCustomBackground}
               className="mt-0.5"
             />
             <div className="space-y-1">

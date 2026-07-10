@@ -101,7 +101,7 @@ export default function Index() {
                     <Palette className="mb-4 h-16 w-16 text-muted-foreground/40" />
                     <h2 className="text-xl font-semibold">Change Product Colour</h2>
                     <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the edit (palette) button on a try-on image to change its colour.
+                      Go to My Gallery and click the edit (palette) button on a model shoot image to change its colour.
                     </p>
                   </CardContent>
                 </Card>
@@ -121,7 +121,7 @@ export default function Index() {
                     <Scissors className="mb-4 h-16 w-16 text-muted-foreground/40" />
                     <h2 className="text-xl font-semibold">Change Product Length</h2>
                     <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the scissors button on a try-on image to adjust its chain length or overall size.
+                      Go to My Gallery and click the scissors button on a model shoot image to adjust its chain length or overall size.
                     </p>
                   </CardContent>
                 </Card>

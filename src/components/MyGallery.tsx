@@ -29,10 +29,10 @@ import { formatTableDate } from "./catalogue/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
 
 const ITEMS_PER_PAGE = 5;
-const GALLERY_CATEGORIES: GalleryCategory[] = ["try-on", "model-shoot", "modified-product", "edited-image", "generated-design", "deleted-catalogue", "video"];
+const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "modified-product", "edited-image", "generated-design", "deleted-catalogue", "video"];
 const GALLERY_CATEGORY_LABELS: Record<GalleryCategory, string> = {
-  "try-on": "Try On Images",
-  "model-shoot": "Model Shoot Images",
+  "model-shoot": "Model Shoot",
+  "product-shoot": "Product Shoot",
   "modified-product": "Modified Product Images",
   "edited-image": "Edited Images",
   "generated-design": "Generated Designs",
@@ -158,7 +158,7 @@ export default function MyGallery({
   const { token } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [category, setCategory] = useState<GalleryCategory>("try-on");
+  const [category, setCategory] = useState<GalleryCategory>("model-shoot");
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: ITEMS_PER_PAGE });
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [imageIndexByRow, setImageIndexByRow] = useState<Record<string, number>>({});
@@ -304,6 +304,8 @@ export default function MyGallery({
       {
         accessorKey: "category",
         header: "Category",
+        cell: ({ row }) =>
+          GALLERY_CATEGORY_LABELS[row.original.category as GalleryCategory] ?? row.original.category,
       },
       {
         accessorKey: "created_at",

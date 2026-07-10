@@ -899,7 +899,7 @@ export async function apiGetTryOnImages(token: string) {
   return res.json() as Promise<{ Key: string }[]>;
 }
 
-export type GalleryCategory = "try-on" | "model-shoot" | "modified-product" | "edited-image" | "generated-design" | "deleted-catalogue" | "video";
+export type GalleryCategory = "model-shoot" | "product-shoot" | "modified-product" | "edited-image" | "generated-design" | "deleted-catalogue" | "video";
 
 export type GalleryItem = {
   uid: string;
@@ -933,10 +933,10 @@ export async function apiGetGalleryItems(
   }
 
   let path = "/gallery";
-  if (params.category === "try-on") {
-    sp.set("category", "try-on");
-  } else if (params.category === "model-shoot") {
+  if (params.category === "model-shoot") {
     path = "/gallery/model-shoot";
+  } else if (params.category === "product-shoot") {
+    path = "/gallery/product-shoot";
   } else if (params.category === "modified-product") {
     path = "/gallery/modified-product";
   } else if (params.category === "edited-image") {
@@ -1076,6 +1076,8 @@ export type ApiCreateStudioShootOptions = {
   aspectRatio?: TryOnAspectRatio;
   outputQuality?: TryOnOutputQuality;
   brandKitUid?: string | null;
+  backgroundText?: string;
+  backgroundFile?: File | null;
 };
 
 export async function apiCreateStudioShoot(
@@ -1085,7 +1087,11 @@ export async function apiCreateStudioShoot(
 ): Promise<StudioShootResult> {
   const generateSideView = options?.generateSideView ?? false;
 
-  const postStudioShootRequest = async (frontFile: File, sideFile?: File | null) => {
+  const postStudioShootRequest = async (
+    frontFile: File,
+    sideFile?: File | null,
+    backgroundFile?: File | null,
+  ) => {
     const formData = new FormData();
     formData.append("garment_file", frontFile);
     formData.append("generate_side_view", generateSideView ? "true" : "false");
@@ -1100,6 +1106,13 @@ export async function apiCreateStudioShoot(
     if (generateSideView && sideFile) {
       formData.append("side_view_file", sideFile);
     }
+    const backgroundText = options?.backgroundText?.trim();
+    if (backgroundText) {
+      formData.append("background_text", backgroundText);
+    }
+    if (options?.backgroundFile) {
+      formData.append("background_file", backgroundFile ?? options.backgroundFile);
+    }
     return fetch(`${API_BASE_URL}/create-studio-shoot`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
@@ -1112,7 +1125,10 @@ export async function apiCreateStudioShoot(
     generateSideView && options?.sideViewFile
       ? await compressImageForStudioShoot(options.sideViewFile, false)
       : null;
-  let res = await postStudioShootRequest(preparedFile, preparedSideFile);
+  const preparedBackgroundFile = options?.backgroundFile
+    ? await compressImageForStudioShoot(options.backgroundFile, false)
+    : null;
+  let res = await postStudioShootRequest(preparedFile, preparedSideFile, preparedBackgroundFile);
 
   if (!res.ok) {
     const errMessage = await parseApiErrorMessage(res, "Failed to create studio shoot");
@@ -1125,7 +1141,11 @@ export async function apiCreateStudioShoot(
         preparedSideFile != null
           ? await compressImageForStudioShoot(preparedSideFile, true)
           : null;
-      res = await postStudioShootRequest(strictFile, strictSideFile);
+      const strictBackgroundFile =
+        preparedBackgroundFile != null
+          ? await compressImageForStudioShoot(preparedBackgroundFile, true)
+          : null;
+      res = await postStudioShootRequest(strictFile, strictSideFile, strictBackgroundFile);
       if (!res.ok) {
         const strictErr = await parseApiErrorMessage(res, "Failed to create studio shoot");
         throw new Error(
