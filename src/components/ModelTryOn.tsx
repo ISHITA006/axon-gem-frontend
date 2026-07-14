@@ -142,7 +142,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   clothingFileRef.current = clothingFile;
   const [generateCloseUp, setGenerateCloseUp] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<TryOnAspectRatio>("2:3");
-  const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("2K");
+  const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("1K");
   const [frontImageLoading, setFrontImageLoading] = useState(false);
 
   const NO_BRAND_KIT = "none";

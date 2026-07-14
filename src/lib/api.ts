@@ -858,7 +858,7 @@ export async function apiGenerateTryOn(
       generate_close_up: generateCloseUp ? "true" : "false",
       pose_selected: poseSelected ? "true" : "false",
       aspect_ratio: options?.aspectRatio ?? "2:3",
-      output_quality: options?.outputQuality ?? "2K",
+      output_quality: options?.outputQuality ?? "1K",
     });
     const brandKitUid = options?.brandKitUid?.trim();
     if (brandKitUid) params.set("brand_kit_uid", brandKitUid);
@@ -1096,7 +1096,7 @@ export async function apiCreateStudioShoot(
     formData.append("garment_file", frontFile);
     formData.append("generate_side_view", generateSideView ? "true" : "false");
     formData.append("aspect_ratio", options?.aspectRatio ?? "2:3");
-    formData.append("output_quality", options?.outputQuality ?? "2K");
+    formData.append("output_quality", options?.outputQuality ?? "1K");
     const brandKitUid = options?.brandKitUid;
     if (brandKitUid === null) {
       formData.append("brand_kit_uid", "none");

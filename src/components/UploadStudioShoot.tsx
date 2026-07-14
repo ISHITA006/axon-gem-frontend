@@ -29,7 +29,7 @@ export default function UploadStudioShoot() {
   const [sideViewFile, setSideViewFile] = useState<File | null>(null);
   const [generateSideView, setGenerateSideView] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<TryOnAspectRatio>("2:3");
-  const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("2K");
+  const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("1K");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [sidePreviewUrl, setSidePreviewUrl] = useState<string | null>(null);
   const [shooting, setShooting] = useState(false);
