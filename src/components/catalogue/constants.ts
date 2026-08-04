@@ -1,0 +1,10 @@
+export const JEWELLERY_TYPE_OPTIONS = ["Ring", "Necklace", "Pendant", "Earrings", "Studs", "Choker", "Bracelet", "Bangle", "Maang-tikka", "Nose-pin", "Anklet", "Brooch", "Cufflinks"] as const;
+export const GENDER_OPTIONS = ["Female", "Male", "Unisex"] as const;
+export const AGE_OPTIONS = ["Adult", "Child"] as const;
+export const METAL_OPTIONS = ["Yellow gold", "White gold", "Rose gold", "Platinum", "Silver", "Oxidised silver", "Two-tone"] as const;
+export const METAL_PURITY_OPTIONS = ["24K", "22K", "18K", "14K", "950 platinum", "925 silver", "NA"] as const;
+export const STONE_TYPE_OPTIONS = ["Diamond", "Ruby", "Emerald", "Sapphire", "Pearl", "Polki", "Kundan", "Cubic-zirconia", "Semi-precious", "None"] as const;
+export const STONE_CUT_OPTIONS = ["Round brilliant", "Princess", "Emerald", "Oval", "Pear", "Marquise", "Cushion", "Asscher", "Baguette", "Rose cut", "Uncut", "Cabochon", "NA"] as const;
+export const SETTING_TYPE_OPTIONS = ["Prong", "Bezel", "Pave", "Channel", "Closed", "Kundan-set", "Prong+pave", "Tension", "NA"] as const;
+export const DESIGN_OPTIONS = ["Solid", "Textured", "Studded", "Filigree", "Enamel", "Temple", "Minimal", "Statement"] as const;
+export const CATEGORY_OPTIONS = ["Development", "Production", "Studio Shoot"] as const;

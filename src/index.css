@@ -1,0 +1,110 @@
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/500.css";
+@import "@fontsource/manrope/600.css";
+@import "@fontsource/manrope/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
+All colors MUST be HSL. Palette: soft, light pastels for a clean, professional interface.
+*/
+
+@layer base {
+  :root {
+    --background: 250 60% 98.5%;
+    --foreground: 226 32% 24%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 226 32% 24%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 226 32% 24%;
+
+    --primary: 243 62% 76%;
+    --primary-foreground: 243 45% 18%;
+
+    --secondary: 162 48% 88%;
+    --secondary-foreground: 162 42% 20%;
+
+    --muted: 230 35% 95%;
+    --muted-foreground: 226 15% 46%;
+
+    --accent: 336 60% 91%;
+    --accent-foreground: 336 42% 26%;
+
+    --destructive: 355 70% 78%;
+    --destructive-foreground: 355 55% 26%;
+
+    --border: 230 32% 91%;
+    --input: 230 32% 91%;
+    --ring: 243 55% 72%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 248 45% 97%;
+
+    --sidebar-foreground: 226 25% 32%;
+
+    --sidebar-primary: 243 62% 76%;
+
+    --sidebar-primary-foreground: 243 45% 18%;
+
+    --sidebar-accent: 248 40% 93%;
+
+    --sidebar-accent-foreground: 226 30% 24%;
+
+    --sidebar-border: 248 30% 90%;
+
+    --sidebar-ring: 243 55% 72%;
+  }
+
+  .dark {
+    --background: 226 30% 12%;
+    --foreground: 230 40% 94%;
+
+    --card: 226 28% 15%;
+    --card-foreground: 230 40% 94%;
+
+    --popover: 226 28% 15%;
+    --popover-foreground: 230 40% 94%;
+
+    --primary: 243 55% 78%;
+    --primary-foreground: 243 45% 16%;
+
+    --secondary: 162 30% 24%;
+    --secondary-foreground: 162 45% 88%;
+
+    --muted: 226 22% 20%;
+    --muted-foreground: 226 15% 68%;
+
+    --accent: 336 30% 26%;
+    --accent-foreground: 336 55% 90%;
+
+    --destructive: 355 55% 40%;
+    --destructive-foreground: 355 70% 92%;
+
+    --border: 226 22% 22%;
+    --input: 226 22% 22%;
+    --ring: 243 55% 72%;
+    --sidebar-background: 226 30% 14%;
+    --sidebar-foreground: 230 30% 88%;
+    --sidebar-primary: 243 55% 78%;
+    --sidebar-primary-foreground: 243 45% 16%;
+    --sidebar-accent: 226 25% 20%;
+    --sidebar-accent-foreground: 230 30% 88%;
+    --sidebar-border: 226 22% 22%;
+    --sidebar-ring: 243 55% 72%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
