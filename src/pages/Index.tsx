@@ -9,6 +9,8 @@ import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
 import ManagePoses from "@/components/ManagePoses";
 import ManageCloseUpPoses from "@/components/ManageCloseUpPoses";
+import ManageProductAngles from "@/components/ManageProductAngles";
+import ManageProductSideAngles from "@/components/ManageProductSideAngles";
 import ManageModelPoses from "@/components/ManageModelPoses";
 import ManageBackgrounds from "@/components/ManageBackgrounds";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
@@ -144,6 +146,8 @@ export default function Index() {
             {activeTab === "models" && <ManageModels />}
             {activeTab === "poses" && <ManagePoses />}
             {activeTab === "closeUpPoses" && <ManageCloseUpPoses />}
+            {activeTab === "productAngles" && <ManageProductAngles />}
+            {activeTab === "productSideAngles" && <ManageProductSideAngles />}
             {activeTab === "modelPoses" && <ManageModelPoses />}
             {activeTab === "backgrounds" && <ManageBackgrounds />}
             {activeTab === "catalogViewerManagement" && <ManageCatalogViewers />}

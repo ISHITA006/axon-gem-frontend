@@ -266,6 +266,80 @@ export async function apiDeleteCloseUpPose(token: string, uid: string) {
   await assertOk(res, "Delete failed");
 }
 
+export type ProductAngleRecord = {
+  uid: string;
+  name: string;
+  image_s3_key: string;
+};
+
+export async function apiListProductAngles(token: string) {
+  const res = await fetch(`${API_BASE_URL}/product-angles`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch product angles");
+  return res.json() as Promise<ProductAngleRecord[]>;
+}
+
+export async function apiCreateProductAngle(token: string, payload: { name: string; file: File }) {
+  const formData = new FormData();
+  formData.append("name", payload.name);
+  formData.append("file", await asUploadableImage(payload.file));
+
+  const res = await fetch(`${API_BASE_URL}/product-angles`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  await assertOk(res, "Failed to create product angle");
+  return res.json() as Promise<ProductAngleRecord>;
+}
+
+export async function apiDeleteProductAngle(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-angles/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Delete failed");
+}
+
+export type ProductSideAngleRecord = {
+  uid: string;
+  name: string;
+  image_s3_key: string;
+};
+
+export async function apiListProductSideAngles(token: string) {
+  const res = await fetch(`${API_BASE_URL}/product-side-angles`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch product side angles");
+  return res.json() as Promise<ProductSideAngleRecord[]>;
+}
+
+export async function apiCreateProductSideAngle(token: string, payload: { name: string; file: File }) {
+  const formData = new FormData();
+  formData.append("name", payload.name);
+  formData.append("file", await asUploadableImage(payload.file));
+
+  const res = await fetch(`${API_BASE_URL}/product-side-angles`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  await assertOk(res, "Failed to create product side angle");
+  return res.json() as Promise<ProductSideAngleRecord>;
+}
+
+export async function apiDeleteProductSideAngle(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-side-angles/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Delete failed");
+}
+
 export type ModelPoseRecord = {
   uid: string;
   model_uid: string;
@@ -1071,6 +1145,8 @@ export type ApiCreateStudioShootOptions = {
   brandKitUid?: string | null;
   backgroundText?: string;
   backgroundFile?: File | null;
+  productAngleS3Key?: string | null;
+  productSideAngleS3Key?: string | null;
 };
 
 export async function apiCreateStudioShoot(
@@ -1105,6 +1181,14 @@ export async function apiCreateStudioShoot(
     }
     if (options?.backgroundFile) {
       formData.append("background_file", backgroundFile ?? options.backgroundFile);
+    }
+    const productAngleS3Key = options?.productAngleS3Key?.trim();
+    if (productAngleS3Key) {
+      formData.append("product_angle_s3_key", productAngleS3Key);
+    }
+    const productSideAngleS3Key = options?.productSideAngleS3Key?.trim();
+    if (generateSideView && productSideAngleS3Key) {
+      formData.append("product_side_angle_s3_key", productSideAngleS3Key);
     }
     return fetch(`${API_BASE_URL}/create-studio-shoot`, {
       method: "POST",

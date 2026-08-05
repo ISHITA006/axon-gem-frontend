@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
-import { ImageIcon, Loader2, Upload } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, ImageIcon, Loader2, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiCreateStudioShoot,
+  apiListProductAngles,
+  apiListProductSideAngles,
   apiListProductBrandKits,
   getPresignedUrl,
   TRY_ON_ASPECT_RATIOS,
   TRY_ON_OUTPUT_QUALITIES,
+  type ProductAngleRecord,
+  type ProductSideAngleRecord,
   type ProductBrandKitRecord,
   type StudioShootResult,
   type TryOnAspectRatio,
@@ -19,8 +23,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
+import { cn } from "@/lib/utils";
 
 export default function UploadStudioShoot() {
   const { token } = useAuth();
@@ -45,6 +51,28 @@ export default function UploadStudioShoot() {
   const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
   const [backgroundPreviewUrl, setBackgroundPreviewUrl] = useState<string | null>(null);
 
+  const [productAngles, setProductAngles] = useState<ProductAngleRecord[]>([]);
+  const [productAngleUrls, setProductAngleUrls] = useState<Record<string, string>>({});
+  const [productAnglesLoading, setProductAnglesLoading] = useState(false);
+  const [wantProductAngle, setWantProductAngle] = useState(false);
+  const [selectedProductAngleUid, setSelectedProductAngleUid] = useState<string | null>(null);
+
+  const [productSideAngles, setProductSideAngles] = useState<ProductSideAngleRecord[]>([]);
+  const [productSideAngleUrls, setProductSideAngleUrls] = useState<Record<string, string>>({});
+  const [productSideAnglesLoading, setProductSideAnglesLoading] = useState(false);
+  const [wantProductSideAngle, setWantProductSideAngle] = useState(false);
+  const [selectedProductSideAngleUid, setSelectedProductSideAngleUid] = useState<string | null>(null);
+
+  const selectedProductAngleS3Key = useMemo(() => {
+    const angle = productAngles.find((a) => a.uid === selectedProductAngleUid);
+    return angle?.image_s3_key ?? null;
+  }, [productAngles, selectedProductAngleUid]);
+
+  const selectedProductSideAngleS3Key = useMemo(() => {
+    const angle = productSideAngles.find((a) => a.uid === selectedProductSideAngleUid);
+    return angle?.image_s3_key ?? null;
+  }, [productSideAngles, selectedProductSideAngleUid]);
+
   useEffect(() => {
     if (!token) return;
     apiListProductBrandKits(token)
@@ -57,6 +85,92 @@ export default function UploadStudioShoot() {
         // Product brand kits are optional — silently ignore load failures.
       });
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !wantProductAngle) {
+      if (!wantProductAngle) {
+        setProductAngles([]);
+        setProductAngleUrls({});
+        setProductAnglesLoading(false);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setProductAnglesLoading(true);
+    (async () => {
+      try {
+        const list = await apiListProductAngles(token);
+        if (cancelled) return;
+        setProductAngles(list);
+
+        const urlEntries = await Promise.all(
+          list.map(async (angle) => {
+            try {
+              return [angle.uid, await getPresignedUrl(token, angle.image_s3_key)] as [string, string];
+            } catch {
+              return [angle.uid, ""] as [string, string];
+            }
+          })
+        );
+        if (!cancelled) setProductAngleUrls(Object.fromEntries(urlEntries));
+      } catch {
+        if (!cancelled) {
+          setProductAngles([]);
+          setProductAngleUrls({});
+        }
+      } finally {
+        if (!cancelled) setProductAnglesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, wantProductAngle]);
+
+  useEffect(() => {
+    if (!token || !generateSideView || !wantProductSideAngle) {
+      if (!generateSideView || !wantProductSideAngle) {
+        setProductSideAngles([]);
+        setProductSideAngleUrls({});
+        setProductSideAnglesLoading(false);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setProductSideAnglesLoading(true);
+    (async () => {
+      try {
+        const list = await apiListProductSideAngles(token);
+        if (cancelled) return;
+        setProductSideAngles(list);
+
+        const urlEntries = await Promise.all(
+          list.map(async (angle) => {
+            try {
+              return [angle.uid, await getPresignedUrl(token, angle.image_s3_key)] as [string, string];
+            } catch {
+              return [angle.uid, ""] as [string, string];
+            }
+          })
+        );
+        if (!cancelled) setProductSideAngleUrls(Object.fromEntries(urlEntries));
+      } catch {
+        if (!cancelled) {
+          setProductSideAngles([]);
+          setProductSideAngleUrls({});
+        }
+      } finally {
+        if (!cancelled) setProductSideAnglesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, generateSideView, wantProductSideAngle]);
 
   const handleUseCustomBackgroundChange = (checked: boolean) => {
     setUseCustomBackground(checked);
@@ -160,6 +274,8 @@ export default function UploadStudioShoot() {
     setGenerateSideView(checked);
     if (!checked) {
       setSideViewFile(null);
+      setWantProductSideAngle(false);
+      setSelectedProductSideAngleUid(null);
     }
   };
 
@@ -193,6 +309,24 @@ export default function UploadStudioShoot() {
       }
     }
 
+    if (wantProductAngle && !selectedProductAngleS3Key) {
+      toast({
+        title: "Angle required",
+        description: "Select a product angle from the library, or turn off angle selection.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (generateSideView && wantProductSideAngle && !selectedProductSideAngleS3Key) {
+      toast({
+        title: "Side angle required",
+        description: "Select a product side angle from the library, or turn off side angle selection.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setShooting(true);
     setShowResults(true);
     setResults(null);
@@ -210,6 +344,9 @@ export default function UploadStudioShoot() {
             : undefined,
         backgroundFile:
           useCustomBackground && backgroundInputMode === "image" ? backgroundFile : null,
+        productAngleS3Key: wantProductAngle ? selectedProductAngleS3Key : null,
+        productSideAngleS3Key:
+          generateSideView && wantProductSideAngle ? selectedProductSideAngleS3Key : null,
       });
       if (!shot.frontImageS3Key) {
         throw new Error("Front studio shoot image key not returned from API");
@@ -380,6 +517,176 @@ export default function UploadStudioShoot() {
             </div>
           </div>
         </div>
+
+        {/* Front-view angle / pose */}
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
+            <Checkbox
+              id="want-product-angle"
+              checked={wantProductAngle}
+              onCheckedChange={(checked) => {
+                const next = checked === true;
+                setWantProductAngle(next);
+                if (!next) setSelectedProductAngleUid(null);
+              }}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor="want-product-angle" className="cursor-pointer text-sm leading-snug">
+                Select front-view angle / pose (optional)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Pick a library reference to direct the camera angle for the front hero shot.
+              </p>
+            </div>
+          </div>
+
+          {wantProductAngle && (
+            <div className="space-y-3 rounded-lg border bg-muted/10 p-4">
+              <p className="text-xs text-muted-foreground">
+                Choose an angle. Manage the library under Manage Product Angles.
+              </p>
+              {productAnglesLoading ? (
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : productAngles.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No product angles yet. Add some under Manage Product Angles.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                  {productAngles.map((angle) => (
+                    <button
+                      key={angle.uid}
+                      type="button"
+                      onClick={() =>
+                        setSelectedProductAngleUid((prev) =>
+                          prev === angle.uid ? null : angle.uid
+                        )
+                      }
+                      className={cn(
+                        "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                        selectedProductAngleUid === angle.uid
+                          ? "border-primary ring-2 ring-primary/30"
+                          : "border-transparent hover:border-muted-foreground/30"
+                      )}
+                    >
+                      {productAngleUrls[angle.uid] ? (
+                        <img
+                          src={productAngleUrls[angle.uid]}
+                          alt={angle.name}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-muted">
+                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
+                        <p className="truncate font-medium">{angle.name}</p>
+                      </div>
+                      {selectedProductAngleUid === angle.uid && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                          <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Side-view angle / pose — only when side generation is enabled */}
+        {generateSideView && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
+              <Checkbox
+                id="want-product-side-angle"
+                checked={wantProductSideAngle}
+                onCheckedChange={(checked) => {
+                  const next = checked === true;
+                  setWantProductSideAngle(next);
+                  if (!next) setSelectedProductSideAngleUid(null);
+                }}
+                className="mt-0.5"
+              />
+              <div className="space-y-1">
+                <Label htmlFor="want-product-side-angle" className="cursor-pointer text-sm leading-snug">
+                  Select side-view angle / pose (optional)
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Pick a library reference to direct the camera angle for the side / profile shot.
+                </p>
+              </div>
+            </div>
+
+            {wantProductSideAngle && (
+              <div className="space-y-3 rounded-lg border bg-muted/10 p-4">
+                <p className="text-xs text-muted-foreground">
+                  Choose a side angle. Manage the library under Manage Product Side Angles.
+                </p>
+                {productSideAnglesLoading ? (
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : productSideAngles.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No product side angles yet. Add some under Manage Product Side Angles.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                    {productSideAngles.map((angle) => (
+                      <button
+                        key={angle.uid}
+                        type="button"
+                        onClick={() =>
+                          setSelectedProductSideAngleUid((prev) =>
+                            prev === angle.uid ? null : angle.uid
+                          )
+                        }
+                        className={cn(
+                          "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                          selectedProductSideAngleUid === angle.uid
+                            ? "border-primary ring-2 ring-primary/30"
+                            : "border-transparent hover:border-muted-foreground/30"
+                        )}
+                      >
+                        {productSideAngleUrls[angle.uid] ? (
+                          <img
+                            src={productSideAngleUrls[angle.uid]}
+                            alt={angle.name}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-muted">
+                            <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
+                          <p className="truncate font-medium">{angle.name}</p>
+                        </div>
+                        {selectedProductSideAngleUid === angle.uid && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                            <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Output settings */}
         <div className="space-y-3">
@@ -555,7 +862,13 @@ export default function UploadStudioShoot() {
           type="button"
           className="w-full gap-2"
           onClick={handleGenerate}
-          disabled={!token || !imageFile || shooting}
+          disabled={
+            !token ||
+            !imageFile ||
+            shooting ||
+            (wantProductAngle && !selectedProductAngleS3Key) ||
+            (generateSideView && wantProductSideAngle && !selectedProductSideAngleS3Key)
+          }
         >
           {shooting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           {shooting ? "Generating studio shoot..." : "Generate studio shoot"}

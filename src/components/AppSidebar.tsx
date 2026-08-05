@@ -10,6 +10,8 @@ import {
   PersonStanding,
   UserPen,
   LucideCamera,
+  Aperture,
+  Rotate3D,
   Palette,
   SquareUser,
   BriefcaseBusiness,
@@ -38,6 +40,8 @@ export type TabValue =
   | "models"
   | "poses"
   | "closeUpPoses"
+  | "productAngles"
+  | "productSideAngles"
   | "modelPoses"
   | "backgrounds"
   | "catalogViewerManagement"
@@ -55,8 +59,10 @@ const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = 
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
   { title: "Manage Models", value: "models", icon: Users },
   { title: "Manage Poses", value: "poses", icon: PersonStanding },
-  { title: "Manage Close-Up Poses", value: "closeUpPoses", icon: LucideCamera },
+  { title: "Manage Product Angles", value: "productAngles", icon: Aperture },
+  { title: "Manage Product Side Angles", value: "productSideAngles", icon: Rotate3D },
   { title: "Manage Model Poses", value: "modelPoses", icon: UserPen },
+  { title: "Manage Close-Up Poses", value: "closeUpPoses", icon: LucideCamera },
   { title: "Manage Backgrounds", value: "backgrounds", icon: ImagePlus },
   { title: "Catalog Viewer Management", value: "catalogViewerManagement", icon: UserCog },
 ];
