@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -815,199 +816,203 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       </div>
 
       {/* Background Selection (optional) */}
-      <Card className={!useBackground ? "opacity-70" : ""}>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Background (optional)</CardTitle>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="useBackground"
-                checked={useBackground}
-                onCheckedChange={(v) => {
-                  const next = !!v;
-                  setUseBackground(next);
-                  if (!next) setSelectedBackground(null);
-                }}
-              />
-              <Label htmlFor="useBackground" className="text-xs">
-                Use background
-              </Label>
+      <Collapsible open={useBackground}>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Background (optional)</CardTitle>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="useBackground"
+                  checked={useBackground}
+                  onCheckedChange={(v) => {
+                    const next = !!v;
+                    setUseBackground(next);
+                    if (!next) setSelectedBackground(null);
+                  }}
+                />
+                <Label htmlFor="useBackground" className="text-xs">
+                  Use background
+                </Label>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className={!useBackground ? "pointer-events-none" : ""}>
-            {backgroundsLoading ? (
-              <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
-                ))}
-              </div>
-            ) : backgroundKeys.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No background images found. Add some under Manage Backgrounds.
-              </p>
-            ) : (
-              <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                {backgroundKeys.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSelectedBackground((prev) => (prev === key ? null : key))}
-                    className={cn(
-                      "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition",
-                      selectedBackground === key
-                        ? "border-primary ring-2 ring-primary/30"
-                        : "border-transparent hover:border-muted-foreground/30"
-                    )}
-                  >
-                    {backgroundUrls[key] ? (
-                      <img src={backgroundUrls[key]} alt="Background" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-muted">
-                        <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                      </div>
-                    )}
-                    {selectedBackground === key && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
-                        <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
+              {backgroundsLoading ? (
+                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : backgroundKeys.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No background images found. Add some under Manage Backgrounds.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                  {backgroundKeys.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSelectedBackground((prev) => (prev === key ? null : key))}
+                      className={cn(
+                        "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition",
+                        selectedBackground === key
+                          ? "border-primary ring-2 ring-primary/30"
+                          : "border-transparent hover:border-muted-foreground/30"
+                      )}
+                    >
+                      {backgroundUrls[key] ? (
+                        <img src={backgroundUrls[key]} alt="Background" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-muted">
+                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      {selectedBackground === key && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                          <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Exact Dimensions (optional) */}
-      <Card className={!useDimensions ? "opacity-70" : ""}>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Ruler className="h-4 w-4" /> Exact dimensions (optional)
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="useDimensions"
-                checked={useDimensions}
-                onCheckedChange={(v) => {
-                  const next = !!v;
-                  setUseDimensions(next);
-                  if (next && dimensionRows.length === 0) addDimensionRow();
-                }}
-              />
-              <Label htmlFor="useDimensions" className="text-xs">
-                Specify dimensions
-              </Label>
+      <Collapsible open={useDimensions}>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Ruler className="h-4 w-4" /> Exact dimensions (optional)
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="useDimensions"
+                  checked={useDimensions}
+                  onCheckedChange={(v) => {
+                    const next = !!v;
+                    setUseDimensions(next);
+                    if (next && dimensionRows.length === 0) addDimensionRow();
+                  }}
+                />
+                <Label htmlFor="useDimensions" className="text-xs">
+                  Specify dimensions
+                </Label>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className={!useDimensions ? "pointer-events-none" : ""}>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Enter real measurements so the piece renders at its true size on the model. These override
-              the automatic size estimate.
-            </p>
-
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Quick add:</span>
-              {DIMENSION_PRESETS.map((preset) => (
-                <Button
-                  key={preset.key}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1 text-xs"
-                  onClick={() => applyDimensionPreset(preset.key)}
-                >
-                  <Plus className="h-3 w-3" /> {preset.label}
-                </Button>
-              ))}
-            </div>
-
-            {dimensionRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No measurements added yet. Use a quick-add preset above or add a custom measurement.
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Enter real measurements so the piece renders at its true size on the model. These override
+                the automatic size estimate.
               </p>
-            ) : (
-              <div className="space-y-2">
-                {dimensionRows.map((row) => (
-                  <div key={row.id} className="flex flex-wrap items-center gap-2">
-                    <Input
-                      value={row.part}
-                      onChange={(e) => updateDimensionRow(row.id, { part: e.target.value })}
-                      placeholder="Part (e.g. pendant)"
-                      className="h-9 w-[9rem]"
-                    />
-                    <Select
-                      value={row.type}
-                      onValueChange={(v) => updateDimensionRow(row.id, { type: v as DimensionType })}
-                    >
-                      <SelectTrigger className="h-9 w-[9.5rem]">
-                        <SelectValue placeholder="Measurement" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DIMENSION_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {DIMENSION_TYPE_LABELS[t]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
-                      value={row.value}
-                      onChange={(e) => updateDimensionRow(row.id, { value: e.target.value })}
-                      placeholder="Value"
-                      className="h-9 w-[6rem]"
-                    />
-                    <Select
-                      value={row.unit}
-                      onValueChange={(v) => updateDimensionRow(row.id, { unit: v as DimensionUnit })}
-                    >
-                      <SelectTrigger className="h-9 w-[5rem]">
-                        <SelectValue placeholder="Unit" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DIMENSION_UNITS.map((u) => (
-                          <SelectItem key={u} value={u}>
-                            {u}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => removeDimensionRow(row.id)}
-                      aria-label="Remove measurement"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Quick add:</span>
+                {DIMENSION_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.key}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() => applyDimensionPreset(preset.key)}
+                  >
+                    <Plus className="h-3 w-3" /> {preset.label}
+                  </Button>
                 ))}
               </div>
-            )}
 
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="mt-3 gap-1"
-              onClick={() => addDimensionRow()}
-            >
-              <Plus className="h-4 w-4" /> Add measurement
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              {dimensionRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No measurements added yet. Use a quick-add preset above or add a custom measurement.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {dimensionRows.map((row) => (
+                    <div key={row.id} className="flex flex-wrap items-center gap-2">
+                      <Input
+                        value={row.part}
+                        onChange={(e) => updateDimensionRow(row.id, { part: e.target.value })}
+                        placeholder="Part (e.g. pendant)"
+                        className="h-9 w-[9rem]"
+                      />
+                      <Select
+                        value={row.type}
+                        onValueChange={(v) => updateDimensionRow(row.id, { type: v as DimensionType })}
+                      >
+                        <SelectTrigger className="h-9 w-[9.5rem]">
+                          <SelectValue placeholder="Measurement" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DIMENSION_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {DIMENSION_TYPE_LABELS[t]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        value={row.value}
+                        onChange={(e) => updateDimensionRow(row.id, { value: e.target.value })}
+                        placeholder="Value"
+                        className="h-9 w-[6rem]"
+                      />
+                      <Select
+                        value={row.unit}
+                        onValueChange={(v) => updateDimensionRow(row.id, { unit: v as DimensionUnit })}
+                      >
+                        <SelectTrigger className="h-9 w-[5rem]">
+                          <SelectValue placeholder="Unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DIMENSION_UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {u}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeDimensionRow(row.id)}
+                        aria-label="Remove measurement"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-3 gap-1"
+                onClick={() => addDimensionRow()}
+              >
+                <Plus className="h-4 w-4" /> Add measurement
+              </Button>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Model Selection */}
       <Card>
@@ -1027,49 +1032,44 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
             <div className="space-y-6">
               {sectionConfigs.map((section) => {
                 const models = modelsBySection[section.key];
+                if (models.length === 0) return null;
                 return (
                   <div key={section.key} className="space-y-3">
                     <h3 className="text-sm font-semibold text-foreground">{section.title}</h3>
-                    {models.length === 0 ? (
-                      <div className="py-2 text-sm text-muted-foreground">
-                        No models in this category.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                        {models.map((model) => (
-                          <button
-                            key={model.uid}
-                            onClick={() => setSelectedModelUid(model.uid)}
-                            className={`group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition ${
-                              selectedModelUid === model.uid
-                                ? "border-primary ring-2 ring-primary/30"
-                                : "border-transparent hover:border-muted-foreground/30"
-                            }`}
-                          >
-                            {modelUrls[model.uid] ? (
-                              <img
-                                src={modelUrls[model.uid]}
-                                alt={model.name}
-                                className="h-full w-full object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center bg-muted">
-                                <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                              </div>
-                            )}
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
-                              <p className="truncate font-medium">{model.name}</p>
+                    <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                      {models.map((model) => (
+                        <button
+                          key={model.uid}
+                          onClick={() => setSelectedModelUid(model.uid)}
+                          className={`group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition ${
+                            selectedModelUid === model.uid
+                              ? "border-primary ring-2 ring-primary/30"
+                              : "border-transparent hover:border-muted-foreground/30"
+                          }`}
+                        >
+                          {modelUrls[model.uid] ? (
+                            <img
+                              src={modelUrls[model.uid]}
+                              alt={model.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-muted">
+                              <ImageIcon className="h-8 w-8 text-muted-foreground" />
                             </div>
-                            {selectedModelUid === model.uid && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
-                                <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                          )}
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
+                            <p className="truncate font-medium">{model.name}</p>
+                          </div>
+                          {selectedModelUid === model.uid && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                              <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })}

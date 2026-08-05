@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Palette, Pencil, Scissors, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Palette, Pencil, Scissors } from "lucide-react";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,9 @@ export function FullscreenCarouselDialog({
   title,
   s3Keys,
   startIndex,
-  isVideo = false,
   onChangeProductColour,
   onChangeProductLength,
   onEditImage,
-  onEditVideo,
   onOpenTryOnWithJewellery,
 }: {
   open: boolean;
@@ -27,11 +25,9 @@ export function FullscreenCarouselDialog({
   title: string;
   s3Keys: string[];
   startIndex: number;
-  isVideo?: boolean;
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onEditVideo?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }) {
   const qc = useQueryClient();
@@ -82,14 +78,7 @@ export function FullscreenCarouselDialog({
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      const baseName = currentKey.split("/").pop() || (isVideo ? "video" : "image");
-      if (isVideo) {
-        const dotIndex = baseName.lastIndexOf(".");
-        const withoutExt = dotIndex > 0 ? baseName.slice(0, dotIndex) : baseName;
-        anchor.download = `${withoutExt || "video"}.mp4`;
-      } else {
-        anchor.download = baseName;
-      }
+      anchor.download = currentKey.split("/").pop() || "image";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -97,7 +86,7 @@ export function FullscreenCarouselDialog({
     } catch {
       toast({
         title: "Download failed",
-        description: `Could not download this ${isVideo ? "video" : "image"}.`,
+        description: "Could not download this image.",
         variant: "destructive",
       });
     } finally {
@@ -129,7 +118,6 @@ export function FullscreenCarouselDialog({
               {downloading ? <Loader2 className="h-4 w-4 animate-spin text-foreground" /> : <Download className="h-4 w-4 text-foreground" />}
               <span className="text-xs font-medium text-foreground">Download</span>
             </Button>
-            {!isVideo && <>
             <Button
               type="button"
               variant="ghost"
@@ -178,23 +166,7 @@ export function FullscreenCarouselDialog({
               <Pencil className="h-4 w-4 text-foreground" />
               <span className="text-xs font-medium text-foreground">Edit image</span>
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (currentKey && urlQuery.data && onEditVideo) {
-                  onEditVideo(currentKey, urlQuery.data);
-                }
-              }}
-              className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-              title="Edit video"
-              disabled={!currentKey || !urlQuery.data || !onEditVideo}
-            >
-              <Video className="h-4 w-4 text-foreground" />
-              <span className="text-xs font-medium text-foreground">Create video</span>
-            </Button>
-            {(title === "Modified Product Images" || title === "Edited Images" || title === "Generated Designs") && <Button
+            {(title === "Modified Product Images" || title === "Edited Images") && <Button
               type="button"
               variant="ghost"
               size="sm"
@@ -210,7 +182,6 @@ export function FullscreenCarouselDialog({
               <Gem className="h-4 w-4 text-foreground" />
               <span className="text-xs font-medium text-foreground">Model try-on</span>
             </Button>}
-            </>}
           </div>
         </div>
 
@@ -219,7 +190,7 @@ export function FullscreenCarouselDialog({
             <div className="text-muted-foreground">
               {s3Keys.length ? (
                 <span>
-                  {isVideo ? "Video" : "Image"} <span className="font-medium text-foreground">{idx + 1}</span> / {s3Keys.length}
+                  Image <span className="font-medium text-foreground">{idx + 1}</span> / {s3Keys.length}
                 </span>
               ) : (
                 <span>0 / 0</span>
@@ -229,19 +200,11 @@ export function FullscreenCarouselDialog({
 
           <div className="relative flex h-[72vh] items-center justify-center bg-black/5">
             {!currentKey ? (
-              <div className="text-sm text-muted-foreground">{isVideo ? "No video" : "No image"}</div>
+              <div className="text-sm text-muted-foreground">No image</div>
             ) : urlQuery.isPending ? (
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             ) : urlQuery.isError || !urlQuery.data ? (
-              <div className="text-sm text-destructive">Failed to load {isVideo ? "video" : "image"}</div>
-            ) : isVideo ? (
-              <video
-                key={urlQuery.data}
-                src={urlQuery.data}
-                controls
-                playsInline
-                className="max-h-full max-w-full object-contain"
-              />
+              <div className="text-sm text-destructive">Failed to load image</div>
             ) : (
               <img src={urlQuery.data} alt="" className="max-h-full max-w-full object-contain" />
             )}
@@ -272,4 +235,3 @@ export function FullscreenCarouselDialog({
     </Dialog>
   );
 }
-

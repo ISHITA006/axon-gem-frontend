@@ -62,7 +62,6 @@ export function CatalogueDetail({
   onChangeProductColour,
   onChangeProductLength,
   onEditImage,
-  onEditVideo,
 }: {
   token: string | null;
   item: CatalogueItem;
@@ -88,7 +87,6 @@ export function CatalogueDetail({
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onEditVideo?: (s3Key: string, imageUrl: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -219,7 +217,6 @@ export function CatalogueDetail({
             onChangeProductColour={onChangeProductColour}
             onChangeProductLength={onChangeProductLength}
             onEditImage={onEditImage}
-            onEditVideo={onEditVideo}
           />
 
           {editMode && form ? (

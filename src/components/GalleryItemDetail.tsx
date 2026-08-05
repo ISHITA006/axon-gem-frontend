@@ -30,7 +30,6 @@ type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onEditVideo?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 };
 
@@ -42,7 +41,6 @@ export function GalleryItemDetail({
   onEditImage,
   onChangeLength, 
   onChangeColour,
-  onEditVideo,
   onOpenTryOnWithJewellery,
 }: Props) {
   const { toast } = useToast();
@@ -70,7 +68,6 @@ export function GalleryItemDetail({
 
   const analysis = item.analysis as TryOnAnalysis | null | undefined;
   const carouselTitle = `${categoryTitle}`;
-  const isVideoItem = item.category === "video";
 
   const confirmDelete = async () => {
     if (!token || !item.uid) return;
@@ -155,29 +152,7 @@ export function GalleryItemDetail({
                     setCarouselOpen(true);
                   }}
                 >
-                  {isVideoItem ? (
-                    <div className="group relative h-24 w-24 overflow-hidden rounded-md border bg-muted/30">
-                      {presignedQueries[i]?.isPending ? (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : presignedQueries[i]?.isError || !presignedQueries[i]?.data ? (
-                        <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-destructive">
-                          Failed
-                        </div>
-                      ) : (
-                        <video
-                          src={presignedQueries[i].data}
-                          muted
-                          playsInline
-                          preload="metadata"
-                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.06] group-hover:-translate-y-0.5"
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <ImageKeyThumb token={token} s3Key={k} clickable />
-                  )}
+                  <ImageKeyThumb token={token} s3Key={k} clickable />
                 </button>
               ))}
             </div>
@@ -190,11 +165,9 @@ export function GalleryItemDetail({
             title={carouselTitle}
             s3Keys={imageKeys}
             startIndex={carouselStartIndex}
-            isVideo={isVideoItem}
             onChangeProductColour={onChangeColour}
             onChangeProductLength={onChangeLength}
             onEditImage={onEditImage}
-            onEditVideo={onEditVideo}
             onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
           />
 

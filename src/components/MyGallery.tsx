@@ -29,22 +29,19 @@ import { formatTableDate } from "./catalogue/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
 
 const ITEMS_PER_PAGE = 5;
-const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "modified-product", "edited-image", "generated-design", "deleted-catalogue", "video"];
+const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "modified-product", "edited-image", "deleted-catalogue"];
 const GALLERY_CATEGORY_LABELS: Record<GalleryCategory, string> = {
   "model-shoot": "Model Shoot",
   "product-shoot": "Product Shoot",
   "modified-product": "Modified Product Images",
   "edited-image": "Edited Images",
-  "generated-design": "Generated Designs",
   "deleted-catalogue": "Deleted Catalogue Items",
-  "video": "Videos",
 };
 
 interface MyGalleryProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onEditVideo?: (s3Key: string, imageUrl: string) => void;
   /** Opens Model Try On with this image as the jewellery piece (presigned URL resolved here). */
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }
@@ -52,14 +49,12 @@ interface MyGalleryProps {
 function GalleryImageCell({
   token,
   s3Keys,
-  category,
   rowKey,
   imageIndexByRow,
   setImageIndexByRow,
 }: {
   token: string | null;
   s3Keys: string[];
-  category: string;
   rowKey: string;
   imageIndexByRow: Record<string, number>;
   setImageIndexByRow: Dispatch<SetStateAction<Record<string, number>>>;
@@ -75,7 +70,6 @@ function GalleryImageCell({
   });
 
   const hasMany = s3Keys.length > 1;
-  const isVideoItem = category === "video";
   const prevDisabled = !token || !hasMany || idx <= 0;
   const nextDisabled = !token || !hasMany || idx >= s3Keys.length - 1;
 
@@ -114,14 +108,6 @@ function GalleryImageCell({
           <div className="flex h-full w-full items-center justify-center px-0.5 text-center text-[10px] leading-tight text-destructive">
             Error
           </div>
-        ) : isVideoItem ? (
-          <video
-            src={urlQuery.data}
-            muted
-            playsInline
-            preload="metadata"
-            className="h-full w-full object-cover"
-          />
         ) : (
           <img src={urlQuery.data} alt="" className="h-full w-full object-cover" />
         )}
@@ -152,7 +138,6 @@ export default function MyGallery({
   onEditImage,
   onChangeColour,
   onChangeLength,
-  onEditVideo,
   onOpenTryOnWithJewellery,
 }: MyGalleryProps) {
   const { token } = useAuth();
@@ -294,7 +279,6 @@ export default function MyGallery({
           <GalleryImageCell
             token={token}
             s3Keys={row.original.image_s3_keys ?? []}
-            category={row.original.category}
             rowKey={String(row.original.uid ?? row.id)}
             imageIndexByRow={imageIndexByRow}
             setImageIndexByRow={setImageIndexByRow}
@@ -332,9 +316,7 @@ export default function MyGallery({
           const changingLength = Boolean(selectedKey && actionKey === `length:${selectedKey}`);
           const openingTryOn = Boolean(selectedKey && actionKey === `tryon:${selectedKey}`);
           const disabled = downloading || editing || changingLength || openingTryOn || galleryDeleting;
-          const category = row.original.category;
-          const showTryOn =
-            Boolean(onOpenTryOnWithJewellery && selectedKey && category !== "video");
+          const showTryOn = Boolean(onOpenTryOnWithJewellery && selectedKey);
           return (
             <div className="flex max-w-[220px] flex-wrap items-center gap-1.5 md:max-w-none md:gap-2">
               {selectedKey ? (
@@ -449,7 +431,6 @@ export default function MyGallery({
         onEditImage={onEditImage}
         onChangeLength={onChangeLength}
         onChangeColour={onChangeColour}
-        onEditVideo={onEditVideo}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
       />
     );

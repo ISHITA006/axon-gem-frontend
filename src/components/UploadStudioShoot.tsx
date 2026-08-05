@@ -219,7 +219,7 @@ export default function UploadStudioShoot() {
         sideViewFile: generateSideView ? sideViewFile : null,
         aspectRatio,
         outputQuality,
-        brandKitUid: ensureWhiteBackground ? null : selectedBrandKitUid,
+        brandKitUid: selectedBrandKitUid,
         backgroundText:
           useCustomBackground && backgroundInputMode === "description"
             ? backgroundText.trim()

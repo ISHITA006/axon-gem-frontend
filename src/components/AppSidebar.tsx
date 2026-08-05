@@ -1,26 +1,19 @@
 import {
   Gem,
-  Video,
   Images,
   Users,
   LogOut,
-  Camera,
   ImagePlus,
-  Upload,
   LibraryBig,
   UserCog,
   Wand2,
-  Sparkles,
   PersonStanding,
   UserPen,
-  Paintbrush,
   LucideCamera,
-  SwitchCamera,
   Palette,
   SquareUser,
   BriefcaseBusiness,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -39,8 +32,6 @@ export type TabValue =
   | "tryon"
   | "colour"
   | "length"
-  | "embroideryPrint"
-  | "video"
   | "gallery"
   | "catalogue"
   | "uploadStudioShoot"
@@ -51,19 +42,15 @@ export type TabValue =
   | "backgrounds"
   | "catalogViewerManagement"
   | "editImage"
-  | "generateNewDesigns"
   | "brandKit"
   | "productBrandKit";
 
 const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = [
-  { title: "Model Shoot", value: "tryon", icon: SquareUser },
   { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
-  { title: "Model Video", value: "video", icon: Video },
+  { title: "Model Shoot", value: "tryon", icon: SquareUser },
   { title: "Edit Image", value: "editImage", icon: Wand2 },
-  { title: "Model Brand Kit", value: "brandKit", icon: Palette },
-  { title: "Product Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
-  { title: "Generate New Designs", value: "generateNewDesigns", icon: Sparkles },
-  { title: "Change Embroidery / Print", value: "embroideryPrint", icon: Paintbrush },
+  { title: "Product Shoot Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
+  { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
   { title: "My Gallery", value: "gallery", icon: Images },
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
   { title: "Manage Models", value: "models", icon: Users },

@@ -14,16 +14,11 @@ import ManageBackgrounds from "@/components/ManageBackgrounds";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 import ChangeProductColour from "@/components/ChangeProductColour";
 import ChangeProductLength from "@/components/ChangeProductLength";
-import ChangeEmbroideryPrint from "@/components/ChangeEmbroideryPrint";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
 import ManageCatalogue from "@/components/ManageCatalogue";
 import EditImage from "@/components/EditImage";
-import ModelTryOnVideo from "@/components/ModelTryOnVideo";
-import GenerateNewDesigns from "@/components/GenerateNewDesigns";
 import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
-
-const MODEL_TRY_ON_VIDEO_FRONT_IMAGE_S3KEY_STORAGE_KEY = "auro:modelTryOnVideo:frontImageS3Key";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("tryon");
@@ -40,15 +35,6 @@ export default function Index() {
   const handleEditImage = (s3Key: string, imageUrl: string) => {
     setEditImage({ s3Key, imageUrl });
     setActiveTab("editImage");
-  };
-
-  const handleEditVideo = (s3Key: string, _imageUrl: string) => {
-    try {
-      window.localStorage.setItem(MODEL_TRY_ON_VIDEO_FRONT_IMAGE_S3KEY_STORAGE_KEY, s3Key);
-    } catch {
-      // no-op: if storage is unavailable, we can still navigate to the tab
-    }
-    setActiveTab("video");
   };
 
   const handleChangeLength = (s3Key: string, imageUrl: string) => {
@@ -128,32 +114,11 @@ export default function Index() {
               )
             )}
 
-            {activeTab === "generateNewDesigns" && (
-              <GenerateNewDesigns
-                onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
-                onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
-              />
-            )}
-
-            {activeTab === "embroideryPrint" && (
-              <ChangeEmbroideryPrint
-                onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
-                onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
-              />
-            )}
-
-            {activeTab === "video" && <ModelTryOnVideo />}
-
             {activeTab === "gallery" && (
               <MyGallery
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
-                onEditVideo={handleEditVideo}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
             )}
@@ -162,7 +127,6 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
-                onEditVideo={handleEditVideo}
               />
             )}
             {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
