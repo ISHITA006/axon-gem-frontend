@@ -39,7 +39,6 @@ export default function UploadStudioShoot() {
   const NO_BRAND_KIT = "none";
   const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
   const [selectedBrandKitUid, setSelectedBrandKitUid] = useState<string>(NO_BRAND_KIT);
-  const [ensureWhiteBackground, setEnsureWhiteBackground] = useState(false);
   const [useCustomBackground, setUseCustomBackground] = useState(false);
   const [backgroundInputMode, setBackgroundInputMode] = useState<"description" | "image">("description");
   const [backgroundText, setBackgroundText] = useState("");
@@ -51,32 +50,17 @@ export default function UploadStudioShoot() {
     apiListProductBrandKits(token)
       .then((kits) => {
         setBrandKits(kits);
-        if (ensureWhiteBackground) return;
         const active = kits.find((kit) => kit.is_active);
         if (active) setSelectedBrandKitUid(active.uid);
       })
       .catch(() => {
         // Product brand kits are optional — silently ignore load failures.
       });
-  }, [token, ensureWhiteBackground]);
-
-  const handleEnsureWhiteBackgroundChange = (checked: boolean) => {
-    setEnsureWhiteBackground(checked);
-    if (checked) {
-      setSelectedBrandKitUid(NO_BRAND_KIT);
-      setUseCustomBackground(false);
-      setBackgroundText("");
-      setBackgroundFile(null);
-      return;
-    }
-    const active = brandKits.find((kit) => kit.is_active);
-    if (active) setSelectedBrandKitUid(active.uid);
-  };
+  }, [token]);
 
   const handleUseCustomBackgroundChange = (checked: boolean) => {
     setUseCustomBackground(checked);
     if (checked) {
-      setEnsureWhiteBackground(false);
       const active = brandKits.find((kit) => kit.is_active);
       if (active && selectedBrandKitUid === NO_BRAND_KIT) {
         setSelectedBrandKitUid(active.uid);
@@ -451,7 +435,6 @@ export default function UploadStudioShoot() {
             <Select
               value={selectedBrandKitUid}
               onValueChange={setSelectedBrandKitUid}
-              disabled={ensureWhiteBackground}
             >
               <SelectTrigger id="productBrandKit">
                 <SelectValue placeholder="No brand kit" />
@@ -469,7 +452,7 @@ export default function UploadStudioShoot() {
             <p className="text-xs text-muted-foreground">
               {useCustomBackground
                 ? "Applies camera style and jewellery placement from your brand kit. Background comes from your custom input."
-                : "Applies your brand's camera style, background and jewellery placement to the result."}
+                : "Applies your brand's camera style and jewellery placement to the result. Uses white studio background as default."}
             </p>
           </div>
 
@@ -478,7 +461,6 @@ export default function UploadStudioShoot() {
               id="use-custom-background"
               checked={useCustomBackground}
               onCheckedChange={(checked) => handleUseCustomBackgroundChange(checked === true)}
-              disabled={ensureWhiteBackground}
               className="mt-0.5"
             />
             <div className="space-y-1">
@@ -567,24 +549,6 @@ export default function UploadStudioShoot() {
               )}
             </div>
           )}
-
-          <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
-            <Checkbox
-              id="ensure-white-background"
-              checked={ensureWhiteBackground}
-              onCheckedChange={(checked) => handleEnsureWhiteBackgroundChange(checked === true)}
-              disabled={useCustomBackground}
-              className="mt-0.5"
-            />
-            <div className="space-y-1">
-              <Label htmlFor="ensure-white-background" className="cursor-pointer text-sm leading-snug">
-                Ensure white studio background
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Uses the default clean white studio look and skips any product brand kit styling.
-              </p>
-            </div>
-          </div>
         </div>
 
         <Button

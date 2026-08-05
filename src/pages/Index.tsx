@@ -21,7 +21,7 @@ import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
 
 export default function Index() {
-  const [activeTab, setActiveTab] = useState<TabValue>("tryon");
+  const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
   const [changeColourImage, setChangeColourImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeLengthImage, setChangeLengthImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
