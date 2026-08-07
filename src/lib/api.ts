@@ -1132,6 +1132,7 @@ export type StudioShootResult = {
   status: "success" | "partial";
   frontImageS3Key: string;
   frontImageUrl: string;
+  frontError?: string | null;
   sideImageS3Key?: string | null;
   sideImageUrl?: string | null;
   sideError?: string | null;
@@ -1240,6 +1241,7 @@ export async function apiCreateStudioShoot(
     status?: "success" | "partial";
     front_image_s3_key?: string;
     front_image_url?: string;
+    front_error?: string | null;
     side_image_s3_key?: string | null;
     side_image_url?: string | null;
     side_error?: string | null;
@@ -1260,6 +1262,7 @@ export async function apiCreateStudioShoot(
     status: data.status ?? "success",
     frontImageS3Key,
     frontImageUrl,
+    frontError: data.front_error ?? null,
     sideImageS3Key: data.side_image_s3_key ?? null,
     sideImageUrl: data.side_image_url ?? null,
     sideError: data.side_error ?? null,

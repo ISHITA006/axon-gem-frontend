@@ -368,10 +368,15 @@ export default function UploadStudioShoot() {
         sideImageUrl: sideUrl,
       });
 
-      if (shot.status === "partial" && shot.sideError) {
+      if (shot.status === "partial" && (shot.frontError || shot.sideError)) {
         toast({
-          title: "Partial success",
-          description: "Front view is ready, but the side view could not be generated.",
+          title: "Review recommended",
+          description:
+            shot.frontError && shot.sideError
+              ? "Both views are ready, but fidelity verification flagged them for review."
+              : shot.sideError
+                ? "Front view is ready. Side view is ready but flagged for review."
+                : "Side view is ready. Front view is ready but flagged for review.",
           variant: "destructive",
         });
       } else {

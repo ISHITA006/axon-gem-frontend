@@ -114,10 +114,11 @@ export default function StudioShootResults({
         />
       </div>
 
-      {results.status === "partial" && results.sideError && (
+      {results.status === "partial" && (results.frontError || results.sideError) && (
         <Card className="border-amber-200/70 bg-amber-50/50">
-          <CardContent className="pt-6 text-sm text-amber-800">
-            Front view generated successfully, but the side view failed: {results.sideError}
+          <CardContent className="space-y-1 pt-6 text-sm text-amber-800">
+            {results.frontError && <p>Front view: {results.frontError}</p>}
+            {results.sideError && <p>Side view: {results.sideError}</p>}
           </CardContent>
         </Card>
       )}
