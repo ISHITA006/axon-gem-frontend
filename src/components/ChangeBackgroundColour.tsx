@@ -40,7 +40,7 @@ export default function ChangeBackgroundColour({ s3Key, imageUrl, onBack }: Chan
   const { token } = useAuth();
   const { toast } = useToast();
 
-  const [hex, setHex] = useState("#F5F5F5");
+  const [hex, setHex] = useState("#F8F8F8");
   const [colourName, setColourName] = useState<string>("whitesmoke");
   const [nameLoading, setNameLoading] = useState(false);
 
@@ -221,7 +221,7 @@ export default function ChangeBackgroundColour({ s3Key, imageUrl, onBack }: Chan
                 className="h-10 w-14 rounded border border-input cursor-pointer bg-transparent"
               />
               <Input
-                placeholder="#F5F5F5"
+                placeholder="#F8F8F8"
                 value={hex}
                 onChange={handleHexChange}
                 className="font-mono max-w-[120px]"
