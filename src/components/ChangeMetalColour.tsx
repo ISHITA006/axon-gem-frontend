@@ -25,6 +25,14 @@ const PRESET_METALS: { hex: string; label: string }[] = [
   { hex: "#B0653A", label: "Copper" },
 ];
 
+// Hue window (degrees) around the current metal that still counts as metal.
+// Backend default is 12; narrower protects stones coloured close to the metal.
+const TOLERANCE_OPTIONS: { value: number; label: string; hint: string }[] = [
+  { value: 6, label: "Strict", hint: "Only near-exact metal tones — best for champagne/cognac/citrine stones" },
+  { value: 12, label: "Balanced", hint: "Default — covers normal lighting variation without pulling in near-hue stones" },
+  { value: 24, label: "Broad", hint: "Catches strongly colour-shifted metal reflections" },
+];
+
 function normalizeHex(value: string): string {
   const m = value.trim().replace(/^#/, "").match(/^([0-9A-Fa-f]{0,6})/);
   if (!m) return "";
@@ -43,6 +51,7 @@ export default function ChangeMetalColour({ s3Key, imageUrl, onBack }: ChangeMet
 
   const [hex, setHex] = useState("#B76E79");
   const [sourceHex, setSourceHex] = useState("");
+  const [hueTolerance, setHueTolerance] = useState(12);
   const [colourName, setColourName] = useState<string>("Rose gold");
   const [nameLoading, setNameLoading] = useState(false);
 
@@ -112,7 +121,8 @@ export default function ChangeMetalColour({ s3Key, imageUrl, onBack }: ChangeMet
         token,
         s3Key,
         `#${cleanHex.toUpperCase()}`,
-        cleanSourceHex.length === 6 ? `#${cleanSourceHex.toUpperCase()}` : undefined
+        cleanSourceHex.length === 6 ? `#${cleanSourceHex.toUpperCase()}` : undefined,
+        hueTolerance
       );
       const displayUrl = await getPresignedUrl(token, res.s3_key);
       setResult({ url: displayUrl, s3Key: res.s3_key });
@@ -288,6 +298,28 @@ export default function ChangeMetalColour({ s3Key, imageUrl, onBack }: ChangeMet
             <p className="text-sm text-muted-foreground">
               Leave empty to recolour the piece&apos;s dominant metal tone automatically. For
               two-tone pieces, enter the approximate hex of the metal you want changed.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Match precision</Label>
+            <div className="flex gap-2 flex-wrap">
+              {TOLERANCE_OPTIONS.map((opt) => (
+                <Button
+                  key={opt.value}
+                  type="button"
+                  size="sm"
+                  variant={hueTolerance === opt.value ? "default" : "outline"}
+                  onClick={() => setHueTolerance(opt.value)}
+                  title={opt.hint}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {TOLERANCE_OPTIONS.find((opt) => opt.value === hueTolerance)?.hint}. Use Strict
+              when stones coloured close to the metal are being recoloured by mistake.
             </p>
           </div>
 

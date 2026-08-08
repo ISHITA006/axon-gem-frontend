@@ -1398,7 +1398,8 @@ export async function apiChangeMetalColour(
   token: string,
   imageS3Key: string,
   targetColourHex: string,
-  sourceColourHex?: string
+  sourceColourHex?: string,
+  hueTolerance?: number
 ): Promise<{ detail: string; s3_key: string; url: string }> {
   // Backend accepts a preset name or a bare 6-digit hex (e.g. "#B76E79").
   const params = new URLSearchParams({
@@ -1406,6 +1407,9 @@ export async function apiChangeMetalColour(
     target_colour: targetColourHex,
   });
   if (sourceColourHex) params.set("source_colour", sourceColourHex);
+  // Degrees (3-60); how far a hue may drift from the metal and still be
+  // recoloured. Smaller protects stones whose colour is close to the metal's.
+  if (hueTolerance !== undefined) params.set("hue_tolerance", String(hueTolerance));
   const res = await fetch(`${API_BASE_URL}/change-metal-colour?${params.toString()}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
