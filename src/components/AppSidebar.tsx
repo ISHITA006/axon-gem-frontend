@@ -35,6 +35,7 @@ export type TabValue =
   | "colour"
   | "length"
   | "backgroundColour"
+  | "metalColour"
   | "gallery"
   | "catalogue"
   | "uploadStudioShoot"

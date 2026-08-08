@@ -31,6 +31,7 @@ type Props = {
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
+  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 };
 
@@ -43,6 +44,7 @@ export function GalleryItemDetail({
   onChangeLength, 
   onChangeColour,
   onChangeBackground,
+  onChangeMetal,
   onOpenTryOnWithJewellery,
 }: Props) {
   const { toast } = useToast();
@@ -170,6 +172,7 @@ export function GalleryItemDetail({
             onChangeProductColour={onChangeColour}
             onChangeProductLength={onChangeLength}
             onChangeBackground={onChangeBackground}
+            onChangeMetal={onChangeMetal}
             onEditImage={onEditImage}
             onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
           />

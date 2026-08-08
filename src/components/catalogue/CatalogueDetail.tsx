@@ -62,6 +62,7 @@ export function CatalogueDetail({
   onChangeProductColour,
   onChangeProductLength,
   onChangeBackground,
+  onChangeMetal,
   onEditImage,
 }: {
   token: string | null;
@@ -88,6 +89,7 @@ export function CatalogueDetail({
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
+  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
 }) {
   return (
@@ -219,6 +221,7 @@ export function CatalogueDetail({
             onChangeProductColour={onChangeProductColour}
             onChangeProductLength={onChangeProductLength}
             onChangeBackground={onChangeBackground}
+            onChangeMetal={onChangeMetal}
             onEditImage={onEditImage}
           />
 

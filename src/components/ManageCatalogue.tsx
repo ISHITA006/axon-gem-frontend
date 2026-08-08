@@ -27,9 +27,10 @@ type Props = {
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
+  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
 };
 
-export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeLength, onChangeBackground }: Props) {
+export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeLength, onChangeBackground, onChangeMetal }: Props) {
   const { token } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -281,6 +282,7 @@ export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeL
         onChangeProductColour={onChangeColour}
         onChangeProductLength={onChangeLength}
         onChangeBackground={onChangeBackground}
+        onChangeMetal={onChangeMetal}
         onEditImage={onEditImage}
       />
     );

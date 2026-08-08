@@ -1394,6 +1394,26 @@ export async function apiChangeBackgroundColour(
   return res.json();
 }
 
+export async function apiChangeMetalColour(
+  token: string,
+  imageS3Key: string,
+  targetColourHex: string,
+  sourceColourHex?: string
+): Promise<{ detail: string; s3_key: string; url: string }> {
+  // Backend accepts a preset name or a bare 6-digit hex (e.g. "#B76E79").
+  const params = new URLSearchParams({
+    image_s3_key: imageS3Key,
+    target_colour: targetColourHex,
+  });
+  if (sourceColourHex) params.set("source_colour", sourceColourHex);
+  const res = await fetch(`${API_BASE_URL}/change-metal-colour?${params.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to change metal colour");
+  return res.json();
+}
+
 export async function apiChangeProductLength(
   token: string,
   tryOnImageS3Key: string,

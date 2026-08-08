@@ -1,4 +1,4 @@
-import { Download, ArrowLeft, Loader2, PaintBucket, Scissors, Palette, Pencil } from "lucide-react";
+import { Download, ArrowLeft, Coins, Loader2, PaintBucket, Scissors, Palette, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
@@ -20,6 +20,7 @@ interface TryOnResultsProps {
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
+  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
 }
 
 export default function TryOnResults({
@@ -31,6 +32,7 @@ export default function TryOnResults({
   onChangeColour,
   onChangeLength,
   onChangeBackground,
+  onChangeMetal,
 }: TryOnResultsProps) {
   const { toast } = useToast();
 
@@ -142,6 +144,15 @@ export default function TryOnResults({
                         title="Change background"
                       >
                         <PaintBucket className="h-4 w-4 text-foreground" />
+                      </button>
+                    )}
+                    {onChangeMetal && (
+                      <button
+                        onClick={() => onChangeMetal(item.s3Key, item.url)}
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Change metal"
+                      >
+                        <Coins className="h-4 w-4 text-foreground" />
                       </button>
                     )}
                     {onChangeLength && (

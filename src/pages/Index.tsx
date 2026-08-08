@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
-import { PaintBucket, Palette, Scissors } from "lucide-react";
+import { Coins, PaintBucket, Palette, Scissors } from "lucide-react";
 import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
@@ -16,6 +16,7 @@ import ManageBackgrounds from "@/components/ManageBackgrounds";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 import ChangeProductColour from "@/components/ChangeProductColour";
 import ChangeBackgroundColour from "@/components/ChangeBackgroundColour";
+import ChangeMetalColour from "@/components/ChangeMetalColour";
 import ChangeProductLength from "@/components/ChangeProductLength";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
 import ManageCatalogue from "@/components/ManageCatalogue";
@@ -27,6 +28,7 @@ export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
   const [changeColourImage, setChangeColourImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeBackgroundImage, setChangeBackgroundImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
+  const [changeMetalImage, setChangeMetalImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeLengthImage, setChangeLengthImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [tryOnJewellery, setTryOnJewellery] = useState<{ s3Key: string; imageUrl?: string } | null>(null);
@@ -39,6 +41,11 @@ export default function Index() {
   const handleChangeBackground = (s3Key: string, imageUrl: string) => {
     setChangeBackgroundImage({ s3Key, imageUrl });
     setActiveTab("backgroundColour");
+  };
+
+  const handleChangeMetal = (s3Key: string, imageUrl: string) => {
+    setChangeMetalImage({ s3Key, imageUrl });
+    setActiveTab("metalColour");
   };
 
   const handleEditImage = (s3Key: string, imageUrl: string) => {
@@ -81,6 +88,7 @@ export default function Index() {
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
+                onChangeMetal={handleChangeMetal}
               />
             )}
 
@@ -125,6 +133,27 @@ export default function Index() {
               )
             )}
 
+            {activeTab === "metalColour" && (
+              changeMetalImage ? (
+                <ChangeMetalColour
+                  s3Key={changeMetalImage.s3Key}
+                  imageUrl={changeMetalImage.imageUrl}
+                  onBack={() => setChangeMetalImage(null)}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-20">
+                    <Coins className="mb-4 h-16 w-16 text-muted-foreground/40" />
+                    <h2 className="text-xl font-semibold">Change Metal Colour</h2>
+                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
+                      Go to My Gallery and click the metal (coins) button on a generated image to
+                      recolour its base metal — gold to rose gold, silver and more.
+                    </p>
+                  </CardContent>
+                </Card>
+              )
+            )}
+
             {activeTab === "length" && (
               changeLengthImage ? (
                 <ChangeProductLength
@@ -151,6 +180,7 @@ export default function Index() {
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
+                onChangeMetal={handleChangeMetal}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
             )}
@@ -160,6 +190,7 @@ export default function Index() {
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
+                onChangeMetal={handleChangeMetal}
               />
             )}
             {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
@@ -173,6 +204,7 @@ export default function Index() {
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
+                onChangeMetal={handleChangeMetal}
               />
             )}
             {activeTab === "models" && <ManageModels />}

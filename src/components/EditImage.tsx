@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, ImageIcon, Loader2, PaintBucket, Palette, Pencil, Scissors, Wand2, X } from "lucide-react";
+import { Coins, Download, ImageIcon, Loader2, PaintBucket, Palette, Pencil, Scissors, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiEditImageWithInstructions, downloadImage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ type EditImageProps = {
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
+  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
 };
 
 function fileFromImageBlob(blob: Blob): File {
@@ -42,6 +43,7 @@ export default function EditImage({
   onChangeColour,
   onChangeLength,
   onChangeBackground,
+  onChangeMetal,
 }: EditImageProps) {
   const { token } = useAuth();
   const { toast } = useToast();
@@ -372,7 +374,7 @@ export default function EditImage({
                   alt="Edited result"
                   className="mx-auto max-h-[min(70vh,32rem)] w-full rounded-lg border object-contain shadow-sm"
                 />
-                {(onEditImage || onChangeLength || onChangeColour || onChangeBackground) && resultS3Key ? (
+                {(onEditImage || onChangeLength || onChangeColour || onChangeBackground || onChangeMetal) && resultS3Key ? (
                   <div className="absolute right-2 top-2 flex items-center gap-2">
                     {onEditImage ? (
                       <button
@@ -402,6 +404,16 @@ export default function EditImage({
                         title="Change background"
                       >
                         <PaintBucket className="h-4 w-4 text-foreground" />
+                      </button>
+                    ) : null}
+                    {onChangeMetal ? (
+                      <button
+                        type="button"
+                        onClick={() => onChangeMetal(resultS3Key, resultUrl)}
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Change metal"
+                      >
+                        <Coins className="h-4 w-4 text-foreground" />
                       </button>
                     ) : null}
                     {onChangeLength ? (
