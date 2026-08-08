@@ -64,6 +64,7 @@ export interface ModelTryOnProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
+  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
 }
 
 const EMPTY_MODEL_SECTIONS: ModelSections = {
@@ -131,7 +132,7 @@ function makeDimensionRow(field?: Partial<PresetField>): DimensionRow {
   };
 }
 
-export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColour, onChangeLength }: ModelTryOnProps) {
+export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColour, onChangeLength, onChangeBackground }: ModelTryOnProps) {
   const { token } = useAuth();
   const { toast } = useToast();
 
@@ -585,6 +586,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         onEditImage={onEditImage}
         onChangeColour={onChangeColour}
         onChangeLength={onChangeLength}
+        onChangeBackground={onChangeBackground}
       />
     );
   }

@@ -42,6 +42,7 @@ interface MyGalleryProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
+  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
   /** Opens Model Try On with this image as the jewellery piece (presigned URL resolved here). */
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }
@@ -138,6 +139,7 @@ export default function MyGallery({
   onEditImage,
   onChangeColour,
   onChangeLength,
+  onChangeBackground,
   onOpenTryOnWithJewellery,
 }: MyGalleryProps) {
   const { token } = useAuth();
@@ -431,6 +433,7 @@ export default function MyGallery({
         onEditImage={onEditImage}
         onChangeLength={onChangeLength}
         onChangeColour={onChangeColour}
+        onChangeBackground={onChangeBackground}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
       />
     );

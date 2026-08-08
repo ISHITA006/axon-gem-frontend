@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Palette, Pencil, Scissors } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Gem, Loader2, PaintBucket, Palette, Pencil, Scissors } from "lucide-react";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ export function FullscreenCarouselDialog({
   startIndex,
   onChangeProductColour,
   onChangeProductLength,
+  onChangeBackground,
   onEditImage,
   onOpenTryOnWithJewellery,
 }: {
@@ -27,6 +28,7 @@ export function FullscreenCarouselDialog({
   startIndex: number;
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
+  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }) {
@@ -133,6 +135,22 @@ export function FullscreenCarouselDialog({
             >
               <Palette className="h-4 w-4 text-foreground" />
               <span className="text-xs font-medium text-foreground">Change colour</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (currentKey && urlQuery.data && onChangeBackground) {
+                  onChangeBackground(currentKey, urlQuery.data);
+                }
+              }}
+              className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
+              title="Change background"
+              disabled={!currentKey || !urlQuery.data || !onChangeBackground}
+            >
+              <PaintBucket className="h-4 w-4 text-foreground" />
+              <span className="text-xs font-medium text-foreground">Change background</span>
             </Button>
             <Button
               type="button"

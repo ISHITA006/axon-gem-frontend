@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
-import { Palette, Scissors } from "lucide-react";
+import { PaintBucket, Palette, Scissors } from "lucide-react";
 import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
@@ -15,6 +15,7 @@ import ManageModelPoses from "@/components/ManageModelPoses";
 import ManageBackgrounds from "@/components/ManageBackgrounds";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 import ChangeProductColour from "@/components/ChangeProductColour";
+import ChangeBackgroundColour from "@/components/ChangeBackgroundColour";
 import ChangeProductLength from "@/components/ChangeProductLength";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
 import ManageCatalogue from "@/components/ManageCatalogue";
@@ -25,6 +26,7 @@ import ProductBrandKit from "@/components/ProductBrandKit";
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
   const [changeColourImage, setChangeColourImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
+  const [changeBackgroundImage, setChangeBackgroundImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeLengthImage, setChangeLengthImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [tryOnJewellery, setTryOnJewellery] = useState<{ s3Key: string; imageUrl?: string } | null>(null);
@@ -32,6 +34,11 @@ export default function Index() {
   const handleChangeColour = (s3Key: string, imageUrl: string) => {
     setChangeColourImage({ s3Key, imageUrl });
     setActiveTab("colour");
+  };
+
+  const handleChangeBackground = (s3Key: string, imageUrl: string) => {
+    setChangeBackgroundImage({ s3Key, imageUrl });
+    setActiveTab("backgroundColour");
   };
 
   const handleEditImage = (s3Key: string, imageUrl: string) => {
@@ -73,6 +80,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
+                onChangeBackground={handleChangeBackground}
               />
             )}
 
@@ -90,6 +98,27 @@ export default function Index() {
                     <h2 className="text-xl font-semibold">Change Product Colour</h2>
                     <p className="mt-2 text-muted-foreground text-center max-w-sm">
                       Go to My Gallery and click the edit (palette) button on a model shoot image to change its colour.
+                    </p>
+                  </CardContent>
+                </Card>
+              )
+            )}
+
+            {activeTab === "backgroundColour" && (
+              changeBackgroundImage ? (
+                <ChangeBackgroundColour
+                  s3Key={changeBackgroundImage.s3Key}
+                  imageUrl={changeBackgroundImage.imageUrl}
+                  onBack={() => setChangeBackgroundImage(null)}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-20">
+                    <PaintBucket className="mb-4 h-16 w-16 text-muted-foreground/40" />
+                    <h2 className="text-xl font-semibold">Change Background Colour</h2>
+                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
+                      Go to My Gallery and click the paint bucket button on a generated image to place
+                      it on a new solid background colour.
                     </p>
                   </CardContent>
                 </Card>
@@ -121,6 +150,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
+                onChangeBackground={handleChangeBackground}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
             )}
@@ -129,6 +159,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
+                onChangeBackground={handleChangeBackground}
               />
             )}
             {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
@@ -141,6 +172,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
+                onChangeBackground={handleChangeBackground}
               />
             )}
             {activeTab === "models" && <ManageModels />}

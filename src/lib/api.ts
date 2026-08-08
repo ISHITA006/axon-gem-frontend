@@ -1376,6 +1376,24 @@ export async function apiChangeProductColour(
   return res.json();
 }
 
+export async function apiChangeBackgroundColour(
+  token: string,
+  imageS3Key: string,
+  backgroundColourHex: string
+): Promise<{ detail: string; s3_key: string; url: string }> {
+  // Backend expects a bare 6-digit hex (e.g. "#F5F5F5"), not a "name (#hex)" string.
+  const params = new URLSearchParams({
+    image_s3_key: imageS3Key,
+    background_colour: backgroundColourHex,
+  });
+  const res = await fetch(`${API_BASE_URL}/change-background-colour?${params.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to change background colour");
+  return res.json();
+}
+
 export async function apiChangeProductLength(
   token: string,
   tryOnImageS3Key: string,

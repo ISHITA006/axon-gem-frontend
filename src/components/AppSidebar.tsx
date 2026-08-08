@@ -34,6 +34,7 @@ export type TabValue =
   | "tryon"
   | "colour"
   | "length"
+  | "backgroundColour"
   | "gallery"
   | "catalogue"
   | "uploadStudioShoot"

@@ -61,6 +61,7 @@ export function CatalogueDetail({
   onFormChange,
   onChangeProductColour,
   onChangeProductLength,
+  onChangeBackground,
   onEditImage,
 }: {
   token: string | null;
@@ -86,6 +87,7 @@ export function CatalogueDetail({
   onFormChange: (next: CatalogueEditForm) => void;
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
+  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
 }) {
   return (
@@ -216,6 +218,7 @@ export function CatalogueDetail({
             startIndex={carouselStartIndex}
             onChangeProductColour={onChangeProductColour}
             onChangeProductLength={onChangeProductLength}
+            onChangeBackground={onChangeBackground}
             onEditImage={onEditImage}
           />
 

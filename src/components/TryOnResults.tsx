@@ -1,4 +1,4 @@
-import { Download, ArrowLeft, Loader2, Scissors, Palette, Pencil } from "lucide-react";
+import { Download, ArrowLeft, Loader2, PaintBucket, Scissors, Palette, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
@@ -19,6 +19,7 @@ interface TryOnResultsProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
+  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
 }
 
 export default function TryOnResults({
@@ -29,6 +30,7 @@ export default function TryOnResults({
   onEditImage,
   onChangeColour,
   onChangeLength,
+  onChangeBackground,
 }: TryOnResultsProps) {
   const { toast } = useToast();
 
@@ -131,6 +133,15 @@ export default function TryOnResults({
                         title="Change colour"
                       >
                         <Palette className="h-4 w-4 text-foreground" />
+                      </button>
+                    )}
+                    {onChangeBackground && (
+                      <button
+                        onClick={() => onChangeBackground(item.s3Key, item.url)}
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Change background"
+                      >
+                        <PaintBucket className="h-4 w-4 text-foreground" />
                       </button>
                     )}
                     {onChangeLength && (
