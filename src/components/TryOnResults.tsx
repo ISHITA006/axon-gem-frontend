@@ -1,4 +1,4 @@
-import { Download, ArrowLeft, Coins, Loader2, PaintBucket, Scissors, Palette, Pencil } from "lucide-react";
+import { Download, ArrowLeft, Coins, Loader2, PaintBucket, Scissors, Palette, Pencil, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
@@ -21,6 +21,7 @@ interface TryOnResultsProps {
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
   onChangeMetal?: (s3Key: string, imageUrl: string) => void;
+  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
 }
 
 export default function TryOnResults({
@@ -33,6 +34,7 @@ export default function TryOnResults({
   onChangeLength,
   onChangeBackground,
   onChangeMetal,
+  onSmoothReflection,
 }: TryOnResultsProps) {
   const { toast } = useToast();
 
@@ -153,6 +155,15 @@ export default function TryOnResults({
                         title="Change metal"
                       >
                         <Coins className="h-4 w-4 text-foreground" />
+                      </button>
+                    )}
+                    {onSmoothReflection && (
+                      <button
+                        onClick={() => onSmoothReflection(item.s3Key, item.url)}
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Smooth reflection"
+                      >
+                        <Sparkles className="h-4 w-4 text-foreground" />
                       </button>
                     )}
                     {onChangeLength && (

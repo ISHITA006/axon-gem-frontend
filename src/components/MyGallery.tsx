@@ -44,6 +44,7 @@ interface MyGalleryProps {
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeBackground?: (s3Key: string, imageUrl: string) => void;
   onChangeMetal?: (s3Key: string, imageUrl: string) => void;
+  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
   /** Opens Model Try On with this image as the jewellery piece (presigned URL resolved here). */
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }
@@ -142,6 +143,7 @@ export default function MyGallery({
   onChangeLength,
   onChangeBackground,
   onChangeMetal,
+  onSmoothReflection,
   onOpenTryOnWithJewellery,
 }: MyGalleryProps) {
   const { token } = useAuth();
@@ -437,6 +439,7 @@ export default function MyGallery({
         onChangeColour={onChangeColour}
         onChangeBackground={onChangeBackground}
         onChangeMetal={onChangeMetal}
+        onSmoothReflection={onSmoothReflection}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
       />
     );

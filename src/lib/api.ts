@@ -1418,6 +1418,35 @@ export async function apiChangeMetalColour(
   return res.json();
 }
 
+export async function apiSmoothReflection(
+  token: string,
+  imageS3Key: string,
+  userMaskBlob: Blob,
+  options?: {
+    strength?: number;
+    darkRatio?: number;
+    featherSigma?: number;
+  }
+): Promise<{ detail: string; s3_key: string; url: string }> {
+  const form = new FormData();
+  form.append("image_s3_key", imageS3Key);
+  form.append("user_mask", userMaskBlob, "user_mask.png");
+  if (options?.strength !== undefined) form.append("strength", String(options.strength));
+  if (options?.darkRatio !== undefined) {
+    form.append("dark_ratio", String(options.darkRatio));
+  }
+  if (options?.featherSigma !== undefined) {
+    form.append("feather_sigma", String(options.featherSigma));
+  }
+  const res = await fetch(`${API_BASE_URL}/smooth-reflection`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  await assertOk(res, "Failed to smooth reflection");
+  return res.json();
+}
+
 export async function apiChangeProductLength(
   token: string,
   tryOnImageS3Key: string,

@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
-import { Coins, PaintBucket, Palette, Scissors } from "lucide-react";
+import { Coins, PaintBucket, Palette, Scissors, Sparkles } from "lucide-react";
 import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
@@ -17,6 +17,7 @@ import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 import ChangeProductColour from "@/components/ChangeProductColour";
 import ChangeBackgroundColour from "@/components/ChangeBackgroundColour";
 import ChangeMetalColour from "@/components/ChangeMetalColour";
+import SmoothReflection from "@/components/SmoothReflection";
 import ChangeProductLength from "@/components/ChangeProductLength";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
 import ManageCatalogue from "@/components/ManageCatalogue";
@@ -29,10 +30,11 @@ export default function Index() {
   const [changeColourImage, setChangeColourImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeBackgroundImage, setChangeBackgroundImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeMetalImage, setChangeMetalImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
+  const [smoothReflectionImage, setSmoothReflectionImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [changeLengthImage, setChangeLengthImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [tryOnJewellery, setTryOnJewellery] = useState<{ s3Key: string; imageUrl?: string } | null>(null);
-  
+
   const handleChangeColour = (s3Key: string, imageUrl: string) => {
     setChangeColourImage({ s3Key, imageUrl });
     setActiveTab("colour");
@@ -46,6 +48,11 @@ export default function Index() {
   const handleChangeMetal = (s3Key: string, imageUrl: string) => {
     setChangeMetalImage({ s3Key, imageUrl });
     setActiveTab("metalColour");
+  };
+
+  const handleSmoothReflection = (s3Key: string, imageUrl: string) => {
+    setSmoothReflectionImage({ s3Key, imageUrl });
+    setActiveTab("smoothReflection");
   };
 
   const handleEditImage = (s3Key: string, imageUrl: string) => {
@@ -89,6 +96,7 @@ export default function Index() {
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
                 onChangeMetal={handleChangeMetal}
+                onSmoothReflection={handleSmoothReflection}
               />
             )}
 
@@ -154,6 +162,27 @@ export default function Index() {
               )
             )}
 
+            {activeTab === "smoothReflection" && (
+              smoothReflectionImage ? (
+                <SmoothReflection
+                  s3Key={smoothReflectionImage.s3Key}
+                  imageUrl={smoothReflectionImage.imageUrl}
+                  onBack={() => setSmoothReflectionImage(null)}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-20">
+                    <Sparkles className="mb-4 h-16 w-16 text-muted-foreground/40" />
+                    <h2 className="text-xl font-semibold">Smooth Reflection</h2>
+                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
+                      Go to My Gallery and click the sparkles button on a generated image to paint
+                      over harsh metallic reflections and soften them within the jewellery boundary.
+                    </p>
+                  </CardContent>
+                </Card>
+              )
+            )}
+
             {activeTab === "length" && (
               changeLengthImage ? (
                 <ChangeProductLength
@@ -181,6 +210,7 @@ export default function Index() {
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
                 onChangeMetal={handleChangeMetal}
+                onSmoothReflection={handleSmoothReflection}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
             )}
@@ -191,6 +221,7 @@ export default function Index() {
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
                 onChangeMetal={handleChangeMetal}
+                onSmoothReflection={handleSmoothReflection}
               />
             )}
             {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
@@ -205,6 +236,7 @@ export default function Index() {
                 onChangeLength={handleChangeLength}
                 onChangeBackground={handleChangeBackground}
                 onChangeMetal={handleChangeMetal}
+                onSmoothReflection={handleSmoothReflection}
               />
             )}
             {activeTab === "models" && <ManageModels />}
