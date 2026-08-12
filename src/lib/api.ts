@@ -1379,13 +1379,17 @@ export async function apiChangeProductColour(
 export async function apiChangeBackgroundColour(
   token: string,
   imageS3Key: string,
-  backgroundColourHex: string
+  backgroundColourHex: string,
+  options?: { saveToGallery?: boolean }
 ): Promise<{ detail: string; s3_key: string; url: string }> {
   // Backend expects a bare 6-digit hex (e.g. "#F5F5F5"), not a "name (#hex)" string.
   const params = new URLSearchParams({
     image_s3_key: imageS3Key,
     background_colour: backgroundColourHex,
   });
+  if (options?.saveToGallery !== undefined) {
+    params.set("save_to_gallery", String(options.saveToGallery));
+  }
   const res = await fetch(`${API_BASE_URL}/change-background-colour?${params.toString()}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -1399,7 +1403,8 @@ export async function apiChangeMetalColour(
   imageS3Key: string,
   targetColourHex: string,
   sourceColourHex?: string,
-  hueTolerance?: number
+  hueTolerance?: number,
+  options?: { saveToGallery?: boolean }
 ): Promise<{ detail: string; s3_key: string; url: string }> {
   // Backend accepts a preset name or a bare 6-digit hex (e.g. "#B76E79").
   const params = new URLSearchParams({
@@ -1410,6 +1415,9 @@ export async function apiChangeMetalColour(
   // Degrees (3-60); how far a hue may drift from the metal and still be
   // recoloured. Smaller protects stones whose colour is close to the metal's.
   if (hueTolerance !== undefined) params.set("hue_tolerance", String(hueTolerance));
+  if (options?.saveToGallery !== undefined) {
+    params.set("save_to_gallery", String(options.saveToGallery));
+  }
   const res = await fetch(`${API_BASE_URL}/change-metal-colour?${params.toString()}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -1418,14 +1426,14 @@ export async function apiChangeMetalColour(
   return res.json();
 }
 
-export async function apiSmoothReflection(
+export async function apiBlurMetalBrush(
   token: string,
   imageS3Key: string,
   userMaskBlob: Blob,
   options?: {
     strength?: number;
     darkRatio?: number;
-    featherSigma?: number;
+    saveToGallery?: boolean;
   }
 ): Promise<{ detail: string; s3_key: string; url: string }> {
   const form = new FormData();
@@ -1435,15 +1443,28 @@ export async function apiSmoothReflection(
   if (options?.darkRatio !== undefined) {
     form.append("dark_ratio", String(options.darkRatio));
   }
-  if (options?.featherSigma !== undefined) {
-    form.append("feather_sigma", String(options.featherSigma));
+  if (options?.saveToGallery !== undefined) {
+    form.append("save_to_gallery", String(options.saveToGallery));
   }
-  const res = await fetch(`${API_BASE_URL}/smooth-reflection`, {
+  const res = await fetch(`${API_BASE_URL}/blur-metal-brush`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
-  await assertOk(res, "Failed to smooth reflection");
+  await assertOk(res, "Failed to apply blur brush");
+  return res.json();
+}
+
+export async function apiSaveEditedImage(
+  token: string,
+  imageS3Key: string
+): Promise<{ detail: string; s3_key: string; url: string; gallery_uid?: string }> {
+  const params = new URLSearchParams({ image_s3_key: imageS3Key });
+  const res = await fetch(`${API_BASE_URL}/save-edited-image?${params.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to save edited image");
   return res.json();
 }
 

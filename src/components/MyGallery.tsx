@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatTableDate } from "./catalogue/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
 const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "modified-product", "edited-image", "deleted-catalogue"];
@@ -42,9 +43,7 @@ interface MyGalleryProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   /** Opens Model Try On with this image as the jewellery piece (presigned URL resolved here). */
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }
@@ -141,9 +140,7 @@ export default function MyGallery({
   onEditImage,
   onChangeColour,
   onChangeLength,
-  onChangeBackground,
-  onChangeMetal,
-  onSmoothReflection,
+  onManualPhotoEdit,
   onOpenTryOnWithJewellery,
 }: MyGalleryProps) {
   const { token } = useAuth();
@@ -437,9 +434,7 @@ export default function MyGallery({
         onEditImage={onEditImage}
         onChangeLength={onChangeLength}
         onChangeColour={onChangeColour}
-        onChangeBackground={onChangeBackground}
-        onChangeMetal={onChangeMetal}
-        onSmoothReflection={onSmoothReflection}
+        onManualPhotoEdit={onManualPhotoEdit}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
       />
     );

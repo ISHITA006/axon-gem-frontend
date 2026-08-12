@@ -21,6 +21,7 @@ import { FullscreenCarouselDialog } from "@/components/catalogue/images/Fullscre
 import { ImageKeyThumb } from "@/components/catalogue/images/ImageKeyThumb";
 import { useToast } from "@/hooks/use-toast";
 import { apiDeleteGalleryItem, getPresignedUrl, type GalleryItem, type TryOnAnalysis } from "@/lib/api";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type Props = {
   item: GalleryItem;
@@ -30,9 +31,7 @@ type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 };
 
@@ -44,9 +43,7 @@ export function GalleryItemDetail({
   onEditImage,
   onChangeLength, 
   onChangeColour,
-  onChangeBackground,
-  onChangeMetal,
-  onSmoothReflection,
+  onManualPhotoEdit,
   onOpenTryOnWithJewellery,
 }: Props) {
   const { toast } = useToast();
@@ -173,9 +170,7 @@ export function GalleryItemDetail({
             startIndex={carouselStartIndex}
             onChangeProductColour={onChangeColour}
             onChangeProductLength={onChangeLength}
-            onChangeBackground={onChangeBackground}
-            onChangeMetal={onChangeMetal}
-            onSmoothReflection={onSmoothReflection}
+            onManualPhotoEdit={onManualPhotoEdit}
             onEditImage={onEditImage}
             onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
           />

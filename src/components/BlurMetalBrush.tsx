@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Eraser, Loader2, Paintbrush, RotateCcw } from "lucide-react";
+import { ArrowLeft, Brush, Download, Eraser, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
-  apiSmoothReflection,
+  apiBlurMetalBrush,
   downloadImage,
   getPresignedUrl,
 } from "@/lib/api";
@@ -13,167 +13,193 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import AddToCataloguePanel from "./AddToCataloguePanel";
 
-interface SmoothReflectionProps {
+interface BlurMetalBrushProps {
   s3Key: string;
   imageUrl: string;
   onBack: () => void;
 }
 
-type Tool = "brush" | "eraser";
+type ToolMode = "paint" | "erase";
 
-/** Overlay paint colour — green so harsh-reflection regions are obvious. */
-const BRUSH_OVERLAY = "rgba(34, 197, 94, 0.45)";
+const OVERLAY_STROKE = "rgba(34, 197, 94, 0.55)";
 
-export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothReflectionProps) {
+export default function BlurMetalBrush({ s3Key, imageUrl, onBack }: BlurMetalBrushProps) {
   const { token } = useAuth();
   const { toast } = useToast();
 
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const hasPaintRef = useRef(false);
 
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [imageReady, setImageReady] = useState(false);
-  const [tool, setTool] = useState<Tool>("brush");
+  const [isPointerDown, setIsPointerDown] = useState(false);
+  const [hasPaint, setHasPaint] = useState(false);
+  const [tool, setTool] = useState<ToolMode>("paint");
   const [brushSize, setBrushSize] = useState(28);
   const [strength, setStrength] = useState(0.9);
-  const [darkRatio, setDarkRatio] = useState(0.65);
-  const [hasPaint, setHasPaint] = useState(false);
-  const [isPointerDown, setIsPointerDown] = useState(false);
+  const [darkRatio, setDarkRatio] = useState(0.7);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<{ url: string; s3Key: string } | null>(null);
 
-  const initCanvases = useCallback((w: number, h: number) => {
-    setNaturalSize({ w, h });
-    const maskCanvas = maskCanvasRef.current;
-    const overlayCanvas = overlayCanvasRef.current;
-    if (!maskCanvas || !overlayCanvas) return;
-    maskCanvas.width = w;
-    maskCanvas.height = h;
-    overlayCanvas.width = w;
-    overlayCanvas.height = h;
-    const mctx = maskCanvas.getContext("2d");
-    if (mctx) {
-      mctx.globalCompositeOperation = "source-over";
-      mctx.fillStyle = "#000000";
-      mctx.fillRect(0, 0, w, h);
-    }
-    const octx = overlayCanvas.getContext("2d");
-    if (octx) {
-      octx.globalCompositeOperation = "source-over";
-      octx.clearRect(0, 0, w, h);
-    }
-    setHasPaint(false);
-    setImageReady(true);
+  const syncOverlay = useCallback(() => {
+    const mask = maskCanvasRef.current;
+    const overlay = overlayCanvasRef.current;
+    if (!mask || !overlay) return;
+    const octx = overlay.getContext("2d");
+    if (!octx) return;
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    octx.drawImage(mask, 0, 0);
+    octx.globalCompositeOperation = "source-in";
+    octx.fillStyle = OVERLAY_STROKE;
+    octx.fillRect(0, 0, overlay.width, overlay.height);
+    octx.globalCompositeOperation = "source-over";
   }, []);
+
+  const initCanvases = useCallback(
+    (w: number, h: number) => {
+      setNaturalSize({ w, h });
+      for (const canvas of [maskCanvasRef.current, overlayCanvasRef.current]) {
+        if (!canvas) continue;
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, w, h);
+      }
+      hasPaintRef.current = false;
+      setHasPaint(false);
+      setImageReady(true);
+      // Default brush ~2.5% of short side.
+      setBrushSize(Math.max(12, Math.round(Math.min(w, h) * 0.025)));
+    },
+    []
+  );
 
   const getCanvasPoint = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = overlayCanvasRef.current;
     if (!canvas || !canvas.width || !canvas.height) return null;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
+    const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
     return {
-      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
-      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+      x: Math.max(0, Math.min(canvas.width, x)),
+      y: Math.max(0, Math.min(canvas.height, y)),
     };
   }, []);
 
-  const stampDot = useCallback(
-    (x: number, y: number) => {
-      const maskCanvas = maskCanvasRef.current;
-      const overlayCanvas = overlayCanvasRef.current;
-      if (!maskCanvas || !overlayCanvas) return;
-      const mctx = maskCanvas.getContext("2d");
-      const octx = overlayCanvas.getContext("2d");
-      if (!mctx || !octx) return;
+  const strokeAt = useCallback(
+    (from: { x: number; y: number } | null, to: { x: number; y: number }) => {
+      const mask = maskCanvasRef.current;
+      if (!mask) return;
+      const ctx = mask.getContext("2d");
+      if (!ctx) return;
 
-      const radius = Math.max(2, brushSize / 2);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = brushSize;
 
-      if (tool === "brush") {
-        mctx.globalCompositeOperation = "source-over";
-        mctx.fillStyle = "#ffffff";
-        mctx.beginPath();
-        mctx.arc(x, y, radius, 0, Math.PI * 2);
-        mctx.fill();
+      if (tool === "erase") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = "#ffffff";
+      }
 
-        octx.globalCompositeOperation = "source-over";
-        octx.fillStyle = BRUSH_OVERLAY;
-        octx.beginPath();
-        octx.arc(x, y, radius, 0, Math.PI * 2);
-        octx.fill();
+      ctx.beginPath();
+      if (from) {
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+      } else {
+        ctx.moveTo(to.x, to.y);
+        ctx.lineTo(to.x + 0.01, to.y);
+      }
+      ctx.stroke();
+      ctx.globalCompositeOperation = "source-over";
+
+      if (tool === "paint") {
+        hasPaintRef.current = true;
         setHasPaint(true);
       } else {
-        mctx.globalCompositeOperation = "destination-out";
-        mctx.beginPath();
-        mctx.arc(x, y, radius, 0, Math.PI * 2);
-        mctx.fill();
-        mctx.globalCompositeOperation = "destination-over";
-        mctx.fillStyle = "#000000";
-        mctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
-        mctx.globalCompositeOperation = "source-over";
-
-        octx.globalCompositeOperation = "destination-out";
-        octx.beginPath();
-        octx.arc(x, y, radius, 0, Math.PI * 2);
-        octx.fill();
-        octx.globalCompositeOperation = "source-over";
+        // Check if any paint remains after erase.
+        const sample = ctx.getImageData(0, 0, mask.width, mask.height).data;
+        let any = false;
+        for (let i = 3; i < sample.length; i += 16) {
+          if (sample[i] > 10) {
+            any = true;
+            break;
+          }
+        }
+        hasPaintRef.current = any;
+        setHasPaint(any);
       }
+      syncOverlay();
     },
-    [brushSize, tool]
+    [brushSize, tool, syncOverlay]
   );
 
-  const strokeTo = useCallback(
-    (x: number, y: number) => {
-      const prev = lastPointRef.current;
-      if (!prev) {
-        stampDot(x, y);
-        lastPointRef.current = { x, y };
-        return;
-      }
-      const dist = Math.hypot(x - prev.x, y - prev.y);
-      const step = Math.max(1, brushSize * 0.2);
-      const n = Math.max(1, Math.ceil(dist / step));
-      for (let i = 1; i <= n; i++) {
-        const t = i / n;
-        stampDot(prev.x + (x - prev.x) * t, prev.y + (y - prev.y) * t);
-      }
-      lastPointRef.current = { x, y };
-    },
-    [brushSize, stampDot]
-  );
-
-  const clearMask = () => {
-    const maskCanvas = maskCanvasRef.current;
-    const overlayCanvas = overlayCanvasRef.current;
-    if (!maskCanvas || !overlayCanvas || !naturalSize) return;
-    const mctx = maskCanvas.getContext("2d");
-    const octx = overlayCanvas.getContext("2d");
-    if (mctx) {
-      mctx.globalCompositeOperation = "source-over";
-      mctx.fillStyle = "#000000";
-      mctx.fillRect(0, 0, naturalSize.w, naturalSize.h);
+  const clearPaint = () => {
+    const mask = maskCanvasRef.current;
+    const overlay = overlayCanvasRef.current;
+    if (mask) {
+      const ctx = mask.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, mask.width, mask.height);
     }
-    if (octx) {
-      octx.globalCompositeOperation = "source-over";
-      octx.clearRect(0, 0, naturalSize.w, naturalSize.h);
+    if (overlay) {
+      const ctx = overlay.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
     }
+    hasPaintRef.current = false;
     setHasPaint(false);
     lastPointRef.current = null;
   };
 
   const exportMaskBlob = (): Promise<Blob | null> => {
-    const maskCanvas = maskCanvasRef.current;
-    if (!maskCanvas) return Promise.resolve(null);
+    if (!naturalSize || !hasPaintRef.current) return Promise.resolve(null);
+    const mask = maskCanvasRef.current;
+    if (!mask) return Promise.resolve(null);
+
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = naturalSize.w;
+    exportCanvas.height = naturalSize.h;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return Promise.resolve(null);
+
+    // Opaque black background; white where painted (backend reads RGB max).
+    // IMPORTANT: after fillRect every pixel has alpha=255 — do NOT treat alpha
+    // alone as "selected" or the whole image becomes white.
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    ctx.drawImage(mask, 0, 0);
+    const image = ctx.getImageData(0, 0, exportCanvas.width, exportCanvas.height);
+    const data = image.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = Math.max(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0);
+      if (lum > 20) {
+        data[i] = 255;
+        data[i + 1] = 255;
+        data[i + 2] = 255;
+      } else {
+        data[i] = 0;
+        data[i + 1] = 0;
+        data[i + 2] = 0;
+      }
+      data[i + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+
     return new Promise((resolve) => {
-      maskCanvas.toBlob((blob) => resolve(blob), "image/png");
+      exportCanvas.toBlob((blob) => resolve(blob), "image/png");
     });
   };
 
   const handleSubmit = async () => {
     if (!token || !hasPaint) {
       toast({
-        title: "Paint a selection",
-        description: "Brush over the dark reflection patches on the metal first.",
+        title: "Paint a region",
+        description: "Brush over the dark or white metal patches you want to merge into the surrounding metal.",
         variant: "destructive",
       });
       return;
@@ -182,19 +208,21 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
     setResult(null);
     try {
       const maskBlob = await exportMaskBlob();
-      if (!maskBlob) throw new Error("Could not export selection mask");
-      const res = await apiSmoothReflection(token, s3Key, maskBlob, {
+      if (!maskBlob) throw new Error("Could not export brush mask");
+      const res = await apiBlurMetalBrush(token, s3Key, maskBlob, {
         strength,
         darkRatio,
-        featherSigma: 5,
       });
       const displayUrl = await getPresignedUrl(token, res.s3_key);
       setResult({ url: displayUrl, s3Key: res.s3_key });
-      toast({ title: "Success", description: "Dark reflections reduced successfully." });
+      toast({
+        title: "Success",
+        description: "Dark and light patches merged into surrounding metal inside your brush strokes.",
+      });
     } catch (err: unknown) {
       toast({
         title: "Failed",
-        description: err instanceof Error ? err.message : "Could not smooth reflection",
+        description: err instanceof Error ? err.message : "Could not merge metal patches",
         variant: "destructive",
       });
     } finally {
@@ -209,7 +237,7 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = "reflection-smoothed.png";
+      a.download = "metal-blur-brush.png";
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
@@ -228,16 +256,17 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
     const point = getCanvasPoint(event);
     if (!point) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    lastPointRef.current = null;
     setIsPointerDown(true);
-    strokeTo(point.x, point.y);
+    lastPointRef.current = point;
+    strokeAt(null, point);
   };
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isPointerDown) return;
     const point = getCanvasPoint(event);
     if (!point) return;
-    strokeTo(point.x, point.y);
+    strokeAt(lastPointRef.current, point);
+    lastPointRef.current = point;
   };
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -248,11 +277,11 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
     lastPointRef.current = null;
   };
 
-  // Reset when the source image changes.
   useEffect(() => {
     setImageReady(false);
     setNaturalSize(null);
     setHasPaint(false);
+    hasPaintRef.current = false;
     setResult(null);
   }, [imageUrl, s3Key]);
 
@@ -264,10 +293,10 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
           <Loader2 className="absolute inset-0 h-20 w-20 animate-spin text-primary" />
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-xl font-semibold">Reducing dark reflections...</h2>
+          <h2 className="text-xl font-semibold">Merging metal patches...</h2>
           <p className="text-sm text-muted-foreground">
-            Finding dark patches on metal inside your selection and reconstructing the metal tone
-            underneath — bright highlights stay untouched.
+            Recolouring dark and light patches toward surrounding metal, then lightly
+            feathering the edge. Gemstones and background stay untouched.
           </p>
         </div>
       </div>
@@ -283,7 +312,7 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle className="text-base">Reflection smoothed</CardTitle>
+              <CardTitle className="text-base">Metal patches merged</CardTitle>
               <AddToCataloguePanel
                 token={token}
                 analysis={null}
@@ -302,7 +331,7 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
                 />
               </div>
               <div>
-                <Label className="text-muted-foreground">Smoothed</Label>
+                <Label className="text-muted-foreground">Merged</Label>
                 <img
                   src={result.url}
                   alt="Result"
@@ -318,7 +347,7 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
                   setResult(null);
                 }}
               >
-                Smooth again
+                Merge again
               </Button>
               <Button
                 variant="outline"
@@ -343,12 +372,12 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Smooth dark reflections</CardTitle>
+          <CardTitle className="text-base">Merge metal brush</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <p className="text-sm text-muted-foreground">
-            Paint over dark patches on reflective metal. Only unusually dark metal inside your
-            selection is repaired — white highlights, gemstones and background stay unchanged.
+            Paint over dark or white metal patches. They are recoloured toward surrounding
+            metal, then the edge is lightly feathered — gemstones and background stay unchanged.
           </p>
 
           <div className="mx-auto flex w-full max-w-3xl justify-center rounded-lg border bg-muted/20 p-2">
@@ -370,18 +399,15 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
                 }}
                 draggable={false}
               />
-              {/* Hidden binary mask (white = selected) */}
               <canvas ref={maskCanvasRef} className="hidden" />
-              {/* Overlay matches the img box exactly so brush coords map 1:1 */}
               <canvas
                 ref={overlayCanvasRef}
-                className={`absolute inset-0 h-full w-full touch-none ${
-                  tool === "eraser" ? "cursor-cell" : "cursor-crosshair"
-                }`}
+                className="absolute inset-0 h-full w-full touch-none"
+                style={{ cursor: tool === "erase" ? "cell" : "crosshair" }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
-                onPointerLeave={onPointerUp}
+                onPointerCancel={onPointerUp}
               />
               {!imageReady && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/60">
@@ -395,31 +421,34 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
             <Button
               type="button"
               size="sm"
-              variant={tool === "brush" ? "default" : "outline"}
+              variant={tool === "paint" ? "default" : "outline"}
               className="gap-2"
-              onClick={() => setTool("brush")}
+              onClick={() => setTool("paint")}
             >
-              <Paintbrush className="h-4 w-4" /> Brush
+              <Brush className="h-4 w-4" /> Paint
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={tool === "eraser" ? "default" : "outline"}
+              variant={tool === "erase" ? "default" : "outline"}
               className="gap-2"
-              onClick={() => setTool("eraser")}
+              onClick={() => setTool("erase")}
             >
-              <Eraser className="h-4 w-4" /> Eraser
+              <Eraser className="h-4 w-4" /> Erase
             </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
               className="gap-2"
-              onClick={clearMask}
+              onClick={clearPaint}
               disabled={!hasPaint}
             >
               <RotateCcw className="h-4 w-4" /> Clear
             </Button>
+            <span className="text-sm text-muted-foreground">
+              {hasPaint ? "Green overlay shows your brush strokes." : "Paint on the metal to begin."}
+            </span>
           </div>
 
           <div className="space-y-2 max-w-md">
@@ -431,14 +460,14 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
               value={[brushSize]}
               onValueChange={(v) => setBrushSize(v[0] ?? 28)}
               min={8}
-              max={120}
-              step={2}
+              max={Math.max(80, naturalSize ? Math.round(Math.min(naturalSize.w, naturalSize.h) * 0.12) : 120)}
+              step={1}
             />
           </div>
 
           <div className="space-y-2 max-w-md">
             <div className="flex justify-between">
-              <Label>Repair strength</Label>
+              <Label>Merge strength</Label>
               <span className="text-sm text-muted-foreground">{strength.toFixed(2)}</span>
             </div>
             <Slider
@@ -448,10 +477,6 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
               max={1}
               step={0.05}
             />
-            <p className="text-sm text-muted-foreground">
-              How strongly dark patches are replaced with reconstructed metal. Bright shine is never
-              touched.
-            </p>
           </div>
 
           <div className="space-y-2 max-w-md">
@@ -461,15 +486,11 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
             </div>
             <Slider
               value={[darkRatio]}
-              onValueChange={(v) => setDarkRatio(v[0] ?? 0.65)}
+              onValueChange={(v) => setDarkRatio(v[0] ?? 0.7)}
               min={0.35}
               max={0.85}
               step={0.05}
             />
-            <p className="text-sm text-muted-foreground">
-              Higher values also treat milder dark areas as reflections. If nothing changes, raise
-              this toward 0.75–0.85 and paint tightly over the dark patch.
-            </p>
           </div>
 
           <Button
@@ -478,7 +499,7 @@ export default function SmoothReflection({ s3Key, imageUrl, onBack }: SmoothRefl
             disabled={!hasPaint || !token || !imageReady}
             className="min-w-[200px]"
           >
-            Reduce dark reflections
+            Merge painted metal
           </Button>
         </CardContent>
       </Card>

@@ -36,6 +36,7 @@ import { fmtDate } from "./utils";
 import { ViewField } from "./ViewField";
 import { ImageKeyThumb } from "./images/ImageKeyThumb";
 import { FullscreenCarouselDialog } from "./images/FullscreenCarouselDialog";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 export function CatalogueDetail({
   token,
@@ -61,9 +62,7 @@ export function CatalogueDetail({
   onFormChange,
   onChangeProductColour,
   onChangeProductLength,
-  onChangeBackground,
-  onChangeMetal,
-  onSmoothReflection,
+  onManualPhotoEdit,
   onEditImage,
 }: {
   token: string | null;
@@ -89,9 +88,7 @@ export function CatalogueDetail({
   onFormChange: (next: CatalogueEditForm) => void;
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
 }) {
   return (
@@ -222,9 +219,7 @@ export function CatalogueDetail({
             startIndex={carouselStartIndex}
             onChangeProductColour={onChangeProductColour}
             onChangeProductLength={onChangeProductLength}
-            onChangeBackground={onChangeBackground}
-            onChangeMetal={onChangeMetal}
-            onSmoothReflection={onSmoothReflection}
+            onManualPhotoEdit={onManualPhotoEdit}
             onEditImage={onEditImage}
           />
 

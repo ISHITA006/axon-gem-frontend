@@ -30,6 +30,7 @@ import {
   type TryOnOutputQuality,
 } from "@/lib/api";
 import TryOnResults from "@/components/TryOnResults";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -64,9 +65,7 @@ export interface ModelTryOnProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 }
 
 const EMPTY_MODEL_SECTIONS: ModelSections = {
@@ -134,7 +133,7 @@ function makeDimensionRow(field?: Partial<PresetField>): DimensionRow {
   };
 }
 
-export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColour, onChangeLength, onChangeBackground, onChangeMetal, onSmoothReflection }: ModelTryOnProps) {
+export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColour, onChangeLength, onManualPhotoEdit }: ModelTryOnProps) {
   const { token } = useAuth();
   const { toast } = useToast();
 
@@ -588,9 +587,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         onEditImage={onEditImage}
         onChangeColour={onChangeColour}
         onChangeLength={onChangeLength}
-        onChangeBackground={onChangeBackground}
-        onChangeMetal={onChangeMetal}
-        onSmoothReflection={onSmoothReflection}
+        onManualPhotoEdit={onManualPhotoEdit}
       />
     );
   }

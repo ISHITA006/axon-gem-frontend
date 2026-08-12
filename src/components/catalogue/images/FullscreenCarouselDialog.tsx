@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Coins, Download, Gem, Loader2, PaintBucket, Palette, Pencil, Scissors, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Palette, Pencil, Scissors, SlidersHorizontal } from "lucide-react";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,9 +17,7 @@ export function FullscreenCarouselDialog({
   startIndex,
   onChangeProductColour,
   onChangeProductLength,
-  onChangeBackground,
-  onChangeMetal,
-  onSmoothReflection,
+  onManualPhotoEdit,
   onEditImage,
   onOpenTryOnWithJewellery,
 }: {
@@ -30,9 +29,7 @@ export function FullscreenCarouselDialog({
   startIndex: number;
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 }) {
@@ -145,48 +142,16 @@ export function FullscreenCarouselDialog({
               variant="ghost"
               size="sm"
               onClick={() => {
-                if (currentKey && urlQuery.data && onChangeBackground) {
-                  onChangeBackground(currentKey, urlQuery.data);
+                if (currentKey && urlQuery.data && onManualPhotoEdit) {
+                  onManualPhotoEdit(currentKey, urlQuery.data);
                 }
               }}
               className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-              title="Change background"
-              disabled={!currentKey || !urlQuery.data || !onChangeBackground}
+              title="Manual photo editing"
+              disabled={!currentKey || !urlQuery.data || !onManualPhotoEdit}
             >
-              <PaintBucket className="h-4 w-4 text-foreground" />
-              <span className="text-xs font-medium text-foreground">Change background</span>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (currentKey && urlQuery.data && onChangeMetal) {
-                  onChangeMetal(currentKey, urlQuery.data);
-                }
-              }}
-              className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-              title="Change metal"
-              disabled={!currentKey || !urlQuery.data || !onChangeMetal}
-            >
-              <Coins className="h-4 w-4 text-foreground" />
-              <span className="text-xs font-medium text-foreground">Change metal</span>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (currentKey && urlQuery.data && onSmoothReflection) {
-                  onSmoothReflection(currentKey, urlQuery.data);
-                }
-              }}
-              className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-              title="Smooth reflection"
-              disabled={!currentKey || !urlQuery.data || !onSmoothReflection}
-            >
-              <Sparkles className="h-4 w-4 text-foreground" />
-              <span className="text-xs font-medium text-foreground">Smooth reflection</span>
+              <SlidersHorizontal className="h-4 w-4 text-foreground" />
+              <span className="text-xs font-medium text-foreground">Manual edit</span>
             </Button>
             <Button
               type="button"

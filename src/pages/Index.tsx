@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
-import { Coins, PaintBucket, Palette, Scissors, Sparkles } from "lucide-react";
+import { Palette, Scissors, SlidersHorizontal } from "lucide-react";
 import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
@@ -15,9 +15,7 @@ import ManageModelPoses from "@/components/ManageModelPoses";
 import ManageBackgrounds from "@/components/ManageBackgrounds";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 import ChangeProductColour from "@/components/ChangeProductColour";
-import ChangeBackgroundColour from "@/components/ChangeBackgroundColour";
-import ChangeMetalColour from "@/components/ChangeMetalColour";
-import SmoothReflection from "@/components/SmoothReflection";
+import ManualPhotoEditor, { ManualEditTool } from "@/components/ManualPhotoEditor";
 import ChangeProductLength from "@/components/ChangeProductLength";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
 import ManageCatalogue from "@/components/ManageCatalogue";
@@ -28,9 +26,11 @@ import ProductBrandKit from "@/components/ProductBrandKit";
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
   const [changeColourImage, setChangeColourImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
-  const [changeBackgroundImage, setChangeBackgroundImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
-  const [changeMetalImage, setChangeMetalImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
-  const [smoothReflectionImage, setSmoothReflectionImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
+  const [manualEditImage, setManualEditImage] = useState<{
+    s3Key: string;
+    imageUrl: string;
+    initialTool?: ManualEditTool;
+  } | null>(null);
   const [changeLengthImage, setChangeLengthImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [tryOnJewellery, setTryOnJewellery] = useState<{ s3Key: string; imageUrl?: string } | null>(null);
@@ -40,19 +40,13 @@ export default function Index() {
     setActiveTab("colour");
   };
 
-  const handleChangeBackground = (s3Key: string, imageUrl: string) => {
-    setChangeBackgroundImage({ s3Key, imageUrl });
-    setActiveTab("backgroundColour");
-  };
-
-  const handleChangeMetal = (s3Key: string, imageUrl: string) => {
-    setChangeMetalImage({ s3Key, imageUrl });
-    setActiveTab("metalColour");
-  };
-
-  const handleSmoothReflection = (s3Key: string, imageUrl: string) => {
-    setSmoothReflectionImage({ s3Key, imageUrl });
-    setActiveTab("smoothReflection");
+  const handleManualPhotoEdit = (
+    s3Key: string,
+    imageUrl: string,
+    initialTool: ManualEditTool = "background"
+  ) => {
+    setManualEditImage({ s3Key, imageUrl, initialTool });
+    setActiveTab("manualPhotoEdit");
   };
 
   const handleEditImage = (s3Key: string, imageUrl: string) => {
@@ -94,9 +88,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
-                onChangeBackground={handleChangeBackground}
-                onChangeMetal={handleChangeMetal}
-                onSmoothReflection={handleSmoothReflection}
+                onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}
 
@@ -120,63 +112,22 @@ export default function Index() {
               )
             )}
 
-            {activeTab === "backgroundColour" && (
-              changeBackgroundImage ? (
-                <ChangeBackgroundColour
-                  s3Key={changeBackgroundImage.s3Key}
-                  imageUrl={changeBackgroundImage.imageUrl}
-                  onBack={() => setChangeBackgroundImage(null)}
+            {activeTab === "manualPhotoEdit" && (
+              manualEditImage ? (
+                <ManualPhotoEditor
+                  s3Key={manualEditImage.s3Key}
+                  imageUrl={manualEditImage.imageUrl}
+                  initialTool={manualEditImage.initialTool}
+                  onBack={() => setManualEditImage(null)}
                 />
               ) : (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-20">
-                    <PaintBucket className="mb-4 h-16 w-16 text-muted-foreground/40" />
-                    <h2 className="text-xl font-semibold">Change Background Colour</h2>
+                    <SlidersHorizontal className="mb-4 h-16 w-16 text-muted-foreground/40" />
+                    <h2 className="text-xl font-semibold">Manual photo editing</h2>
                     <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the paint bucket button on a generated image to place
-                      it on a new solid background colour.
-                    </p>
-                  </CardContent>
-                </Card>
-              )
-            )}
-
-            {activeTab === "metalColour" && (
-              changeMetalImage ? (
-                <ChangeMetalColour
-                  s3Key={changeMetalImage.s3Key}
-                  imageUrl={changeMetalImage.imageUrl}
-                  onBack={() => setChangeMetalImage(null)}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-20">
-                    <Coins className="mb-4 h-16 w-16 text-muted-foreground/40" />
-                    <h2 className="text-xl font-semibold">Change Metal Colour</h2>
-                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the metal (coins) button on a generated image to
-                      recolour its base metal — gold to rose gold, silver and more.
-                    </p>
-                  </CardContent>
-                </Card>
-              )
-            )}
-
-            {activeTab === "smoothReflection" && (
-              smoothReflectionImage ? (
-                <SmoothReflection
-                  s3Key={smoothReflectionImage.s3Key}
-                  imageUrl={smoothReflectionImage.imageUrl}
-                  onBack={() => setSmoothReflectionImage(null)}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-20">
-                    <Sparkles className="mb-4 h-16 w-16 text-muted-foreground/40" />
-                    <h2 className="text-xl font-semibold">Smooth Reflection</h2>
-                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the sparkles button on a generated image to paint
-                      over harsh metallic reflections and soften them within the jewellery boundary.
+                      Go to My Gallery and click the sliders button on a generated image to change
+                      background, metal colour, or merge metal patches — then Save when done.
                     </p>
                   </CardContent>
                 </Card>
@@ -208,9 +159,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
-                onChangeBackground={handleChangeBackground}
-                onChangeMetal={handleChangeMetal}
-                onSmoothReflection={handleSmoothReflection}
+                onManualPhotoEdit={handleManualPhotoEdit}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
             )}
@@ -219,9 +168,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
-                onChangeBackground={handleChangeBackground}
-                onChangeMetal={handleChangeMetal}
-                onSmoothReflection={handleSmoothReflection}
+                onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}
             {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
@@ -234,9 +181,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onChangeColour={handleChangeColour}
                 onChangeLength={handleChangeLength}
-                onChangeBackground={handleChangeBackground}
-                onChangeMetal={handleChangeMetal}
-                onSmoothReflection={handleSmoothReflection}
+                onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}
             {activeTab === "models" && <ManageModels />}

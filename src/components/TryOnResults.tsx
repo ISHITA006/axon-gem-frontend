@@ -1,4 +1,5 @@
-import { Download, ArrowLeft, Coins, Loader2, PaintBucket, Scissors, Palette, Pencil, Sparkles } from "lucide-react";
+import { Download, ArrowLeft, Loader2, Scissors, Palette, Pencil, SlidersHorizontal } from "lucide-react";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
@@ -19,9 +20,7 @@ interface TryOnResultsProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 }
 
 export default function TryOnResults({
@@ -32,9 +31,7 @@ export default function TryOnResults({
   onEditImage,
   onChangeColour,
   onChangeLength,
-  onChangeBackground,
-  onChangeMetal,
-  onSmoothReflection,
+  onManualPhotoEdit,
 }: TryOnResultsProps) {
   const { toast } = useToast();
 
@@ -139,31 +136,13 @@ export default function TryOnResults({
                         <Palette className="h-4 w-4 text-foreground" />
                       </button>
                     )}
-                    {onChangeBackground && (
+                    {onManualPhotoEdit && (
                       <button
-                        onClick={() => onChangeBackground(item.s3Key, item.url)}
+                        onClick={() => onManualPhotoEdit(item.s3Key, item.url)}
                         className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change background"
+                        title="Manual photo editing"
                       >
-                        <PaintBucket className="h-4 w-4 text-foreground" />
-                      </button>
-                    )}
-                    {onChangeMetal && (
-                      <button
-                        onClick={() => onChangeMetal(item.s3Key, item.url)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change metal"
-                      >
-                        <Coins className="h-4 w-4 text-foreground" />
-                      </button>
-                    )}
-                    {onSmoothReflection && (
-                      <button
-                        onClick={() => onSmoothReflection(item.s3Key, item.url)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Smooth reflection"
-                      >
-                        <Sparkles className="h-4 w-4 text-foreground" />
+                        <SlidersHorizontal className="h-4 w-4 text-foreground" />
                       </button>
                     )}
                     {onChangeLength && (

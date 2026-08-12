@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Coins, Download, ImageIcon, Loader2, PaintBucket, Palette, Pencil, Scissors, Sparkles, Wand2, X } from "lucide-react";
+import { Download, ImageIcon, Loader2, Palette, Pencil, Scissors, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiEditImageWithInstructions, downloadImage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type EditImageProps = {
   /** When set, this image is fetched and used as the source file (user does not need to upload). */
@@ -20,9 +21,7 @@ type EditImageProps = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 };
 
 function fileFromImageBlob(blob: Blob): File {
@@ -43,9 +42,7 @@ export default function EditImage({
   onEditImage,
   onChangeColour,
   onChangeLength,
-  onChangeBackground,
-  onChangeMetal,
-  onSmoothReflection,
+  onManualPhotoEdit,
 }: EditImageProps) {
   const { token } = useAuth();
   const { toast } = useToast();
@@ -376,7 +373,7 @@ export default function EditImage({
                   alt="Edited result"
                   className="mx-auto max-h-[min(70vh,32rem)] w-full rounded-lg border object-contain shadow-sm"
                 />
-                {(onEditImage || onChangeLength || onChangeColour || onChangeBackground || onChangeMetal || onSmoothReflection) && resultS3Key ? (
+                {(onEditImage || onChangeLength || onChangeColour || onManualPhotoEdit) && resultS3Key ? (
                   <div className="absolute right-2 top-2 flex items-center gap-2">
                     {onEditImage ? (
                       <button
@@ -398,34 +395,14 @@ export default function EditImage({
                         <Palette className="h-4 w-4 text-foreground" />
                       </button>
                     ) : null}
-                    {onChangeBackground ? (
+                    {onManualPhotoEdit ? (
                       <button
                         type="button"
-                        onClick={() => onChangeBackground(resultS3Key, resultUrl)}
+                        onClick={() => onManualPhotoEdit(resultS3Key, resultUrl)}
                         className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change background"
+                        title="Manual photo editing"
                       >
-                        <PaintBucket className="h-4 w-4 text-foreground" />
-                      </button>
-                    ) : null}
-                    {onChangeMetal ? (
-                      <button
-                        type="button"
-                        onClick={() => onChangeMetal(resultS3Key, resultUrl)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change metal"
-                      >
-                        <Coins className="h-4 w-4 text-foreground" />
-                      </button>
-                    ) : null}
-                    {onSmoothReflection ? (
-                      <button
-                        type="button"
-                        onClick={() => onSmoothReflection(resultS3Key, resultUrl)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Smooth reflection"
-                      >
-                        <Sparkles className="h-4 w-4 text-foreground" />
+                        <SlidersHorizontal className="h-4 w-4 text-foreground" />
                       </button>
                     ) : null}
                     {onChangeLength ? (

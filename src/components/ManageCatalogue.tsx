@@ -21,17 +21,16 @@ import { CatalogueDetail } from "@/components/catalogue/CatalogueDetail";
 import { DEFAULT_FILTERS, type CatalogueEditForm, type Filters } from "@/components/catalogue/types";
 import { buildEditForm, catalogueImageS3Keys, formatTableDate, sortFromTable, valueOrDash } from "@/components/catalogue/utils";
 import { CatalogueImageCell } from "@/components/catalogue/images/CatalogueImageCell";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeBackground?: (s3Key: string, imageUrl: string) => void;
-  onChangeMetal?: (s3Key: string, imageUrl: string) => void;
-  onSmoothReflection?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 };
 
-export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeLength, onChangeBackground, onChangeMetal, onSmoothReflection }: Props) {
+export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeLength, onManualPhotoEdit }: Props) {
   const { token } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -282,9 +281,7 @@ export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeL
         onFormChange={(next) => setEditForm(next)}
         onChangeProductColour={onChangeColour}
         onChangeProductLength={onChangeLength}
-        onChangeBackground={onChangeBackground}
-        onChangeMetal={onChangeMetal}
-        onSmoothReflection={onSmoothReflection}
+        onManualPhotoEdit={onManualPhotoEdit}
         onEditImage={onEditImage}
       />
     );
