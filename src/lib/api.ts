@@ -266,6 +266,44 @@ export async function apiDeleteCloseUpPose(token: string, uid: string) {
   await assertOk(res, "Delete failed");
 }
 
+export type ClothingRecord = {
+  uid: string;
+  name: string;
+  image_s3_key: string;
+  description: string;
+};
+
+export async function apiListClothing(token: string) {
+  const res = await fetch(`${API_BASE_URL}/clothing`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch clothing");
+  return res.json() as Promise<ClothingRecord[]>;
+}
+
+export async function apiCreateClothing(token: string, payload: { name: string; file: File }) {
+  const formData = new FormData();
+  formData.append("name", payload.name);
+  formData.append("file", await asUploadableImage(payload.file));
+
+  const res = await fetch(`${API_BASE_URL}/clothing`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  await assertOk(res, "Failed to create clothing item");
+  return res.json() as Promise<ClothingRecord>;
+}
+
+export async function apiDeleteClothing(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/clothing/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Delete failed");
+}
+
 export type ProductAngleRecord = {
   uid: string;
   name: string;
@@ -872,6 +910,8 @@ export type ApiGenerateTryOnOptions = {
   modelPoseS3Key?: string | null;
   /** Optional S3 key of a close-up pose reference (only used when generating close-up). */
   closeUpPoseS3Key?: string | null;
+  /** Optional clothing library item whose stored description styles the model. */
+  clothingUid?: string | null;
 };
 
 export async function apiGenerateTryOn(
@@ -947,6 +987,10 @@ export async function apiGenerateTryOn(
     const closeUpPoseS3Key = options?.closeUpPoseS3Key?.trim();
     if (generateCloseUp && closeUpPoseS3Key) {
       params.set("close_up_pose_s3_key", closeUpPoseS3Key);
+    }
+    const clothingUid = options?.clothingUid?.trim();
+    if (clothingUid) {
+      params.set("clothing_uid", clothingUid);
     }
 
     const res = await fetch(`${API_BASE_URL}/generate-jewellery-try-on-images?${params.toString()}`, {

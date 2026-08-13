@@ -8,6 +8,7 @@ import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
 import ManagePoses from "@/components/ManagePoses";
+import ManageClothing from "@/components/ManageClothing";
 import ManageCloseUpPoses from "@/components/ManageCloseUpPoses";
 import ManageProductAngles from "@/components/ManageProductAngles";
 import ManageProductSideAngles from "@/components/ManageProductSideAngles";
@@ -186,6 +187,7 @@ export default function Index() {
             )}
             {activeTab === "models" && <ManageModels />}
             {activeTab === "poses" && <ManagePoses />}
+            {activeTab === "clothing" && <ManageClothing />}
             {activeTab === "closeUpPoses" && <ManageCloseUpPoses />}
             {activeTab === "productAngles" && <ManageProductAngles />}
             {activeTab === "productSideAngles" && <ManageProductSideAngles />}

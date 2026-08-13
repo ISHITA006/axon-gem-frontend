@@ -10,6 +10,7 @@ import {
   apiListPoses,
   apiListModelPosesForModel,
   apiListCloseUpPoses,
+  apiListClothing,
   apiGetBackgroundImages,
   getPresignedUrl,
   TRY_ON_ASPECT_RATIOS,
@@ -24,6 +25,7 @@ import {
   type ModelRecord,
   type ModelPoseRecord,
   type CloseUpPoseRecord,
+  type ClothingRecord,
   type PoseRecord,
   type TryOnAnalysis,
   type TryOnAspectRatio,
@@ -208,6 +210,12 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   const [wantCloseUpPose, setWantCloseUpPose] = useState(false);
   const [selectedCloseUpPoseUid, setSelectedCloseUpPoseUid] = useState<string | null>(null);
 
+  const [useClothing, setUseClothing] = useState(false);
+  const [clothingItems, setClothingItems] = useState<ClothingRecord[]>([]);
+  const [clothingUrls, setClothingUrls] = useState<Record<string, string>>({});
+  const [clothingLoading, setClothingLoading] = useState(false);
+  const [selectedClothingUid, setSelectedClothingUid] = useState<string | null>(null);
+
   const allModels = useMemo(
     () => [
       ...modelsBySection.femaleAdult,
@@ -381,6 +389,48 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   }, [generateCloseUp, token]);
 
   useEffect(() => {
+    if (!useClothing || !token) {
+      setClothingItems([]);
+      setClothingUrls({});
+      setSelectedClothingUid(null);
+      setClothingLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setClothingLoading(true);
+
+    (async () => {
+      try {
+        const list = await apiListClothing(token);
+        if (cancelled) return;
+        setClothingItems(list);
+        const urlEntries = await Promise.all(
+          list.map(async (item) => {
+            try {
+              return [item.uid, await getPresignedUrl(token, item.image_s3_key)] as [string, string];
+            } catch {
+              return [item.uid, ""] as [string, string];
+            }
+          })
+        );
+        if (!cancelled) setClothingUrls(Object.fromEntries(urlEntries));
+      } catch {
+        if (!cancelled) {
+          setClothingItems([]);
+          setClothingUrls({});
+        }
+      } finally {
+        if (!cancelled) setClothingLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [useClothing, token]);
+
+  useEffect(() => {
     if (!token) return;
     apiListBrandKits(token)
       .then((kits) => {
@@ -532,6 +582,14 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       });
       return;
     }
+    if (useClothing && !selectedClothingUid) {
+      toast({
+        title: "Missing clothing",
+        description: "Pick a clothing item, or turn off the clothing option.",
+        variant: "destructive",
+      });
+      return;
+    }
     setGenerating(true);
     setResults(null);
     setShowResults(true);
@@ -550,6 +608,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
           poseSelected: wantModelPose,
           modelPoseS3Key: wantModelPose ? selectedModelPoseS3Key : null,
           closeUpPoseS3Key: generateCloseUp && wantCloseUpPose ? selectedCloseUpPoseS3Key : null,
+          clothingUid: useClothing ? selectedClothingUid : null,
           ...(clothingExternalS3Key ? { existingJewelleryS3Key: clothingExternalS3Key } : {}),
         }
       );
@@ -817,6 +876,91 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
           </Card>
         </div>
       </div>
+
+      {/* Clothing Selection (optional) */}
+      <Collapsible open={useClothing}>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Clothing (optional)</CardTitle>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="useClothing"
+                  checked={useClothing}
+                  onCheckedChange={(v) => {
+                    const next = !!v;
+                    setUseClothing(next);
+                    if (!next) setSelectedClothingUid(null);
+                  }}
+                />
+                <Label htmlFor="useClothing" className="text-xs">
+                  Use clothing
+                </Label>
+              </div>
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Pick a saved clothing item. The model will be styled using its stored description
+                (colour, neckline, and print) instead of the automatic style note.
+              </p>
+              {clothingLoading ? (
+                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : clothingItems.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No clothing yet. Add some under Manage Clothing.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                  {clothingItems.map((item) => (
+                    <button
+                      key={item.uid}
+                      type="button"
+                      title={item.description}
+                      onClick={() =>
+                        setSelectedClothingUid((prev) => (prev === item.uid ? null : item.uid))
+                      }
+                      className={cn(
+                        "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                        selectedClothingUid === item.uid
+                          ? "border-primary ring-2 ring-primary/30"
+                          : "border-transparent hover:border-muted-foreground/30"
+                      )}
+                    >
+                      {clothingUrls[item.uid] ? (
+                        <img
+                          src={clothingUrls[item.uid]}
+                          alt={item.name}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-muted">
+                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
+                        <p className="truncate font-medium">{item.name}</p>
+                        <p className="line-clamp-2 text-[11px] text-white/85">{item.description}</p>
+                      </div>
+                      {selectedClothingUid === item.uid && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                          <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Background Selection (optional) */}
       <Collapsible open={useBackground}>

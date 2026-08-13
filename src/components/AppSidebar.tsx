@@ -15,6 +15,7 @@ import {
   Palette,
   SquareUser,
   BriefcaseBusiness,
+  Shirt,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,6 +41,7 @@ export type TabValue =
   | "uploadStudioShoot"
   | "models"
   | "poses"
+  | "clothing"
   | "closeUpPoses"
   | "productAngles"
   | "productSideAngles"
@@ -60,6 +62,7 @@ const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = 
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
   { title: "Manage Models", value: "models", icon: Users },
   { title: "Manage Poses", value: "poses", icon: PersonStanding },
+  { title: "Manage Clothing", value: "clothing", icon: Shirt },
   { title: "Manage Product Angles", value: "productAngles", icon: Aperture },
   { title: "Manage Product Side Angles", value: "productSideAngles", icon: Rotate3D },
   { title: "Manage Model Poses", value: "modelPoses", icon: UserPen },
