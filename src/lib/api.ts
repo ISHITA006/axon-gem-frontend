@@ -1455,6 +1455,35 @@ export async function apiBlurMetalBrush(
   return res.json();
 }
 
+export async function apiBlurShadowBrush(
+  token: string,
+  imageS3Key: string,
+  userMaskBlob: Blob,
+  options?: {
+    strength?: number;
+    darkRatio?: number;
+    saveToGallery?: boolean;
+  }
+): Promise<{ detail: string; s3_key: string; url: string }> {
+  const form = new FormData();
+  form.append("image_s3_key", imageS3Key);
+  form.append("user_mask", userMaskBlob, "user_mask.png");
+  if (options?.strength !== undefined) form.append("strength", String(options.strength));
+  if (options?.darkRatio !== undefined) {
+    form.append("dark_ratio", String(options.darkRatio));
+  }
+  if (options?.saveToGallery !== undefined) {
+    form.append("save_to_gallery", String(options.saveToGallery));
+  }
+  const res = await fetch(`${API_BASE_URL}/blur-shadow-brush`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  await assertOk(res, "Failed to soften surface shadows");
+  return res.json();
+}
+
 export async function apiSaveEditedImage(
   token: string,
   imageS3Key: string

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Brush,
+  CloudFog,
   Coins,
   Download,
   Eraser,
@@ -20,6 +21,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   apiBlurMetalBrush,
+  apiBlurShadowBrush,
   apiChangeBackgroundColour,
   apiChangeMetalColour,
   apiGetColourName,
@@ -31,7 +33,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import AddToCataloguePanel from "./AddToCataloguePanel";
 
-export type ManualEditTool = "background" | "metal" | "blur";
+export type ManualEditTool = "background" | "metal" | "blur" | "shadow";
+
+function isBrushTool(tool: ManualEditTool): boolean {
+  return tool === "blur" || tool === "shadow";
+}
 
 interface ManualPhotoEditorProps {
   s3Key: string;
@@ -68,7 +74,8 @@ const TOLERANCE_OPTIONS: { value: number; label: string; hint: string }[] = [
   { value: 24, label: "Broad", hint: "Catches strongly colour-shifted metal" },
 ];
 
-const OVERLAY_STROKE = "rgba(34, 197, 94, 0.55)";
+const METAL_OVERLAY_STROKE = "rgba(34, 197, 94, 0.55)";
+const SHADOW_OVERLAY_STROKE = "rgba(251, 146, 60, 0.55)";
 
 function normalizeHex(value: string): string {
   const m = value.trim().replace(/^#/, "").match(/^([0-9A-Fa-f]{0,6})/);
@@ -122,6 +129,8 @@ export default function ManualPhotoEditor({
   const [brushSize, setBrushSize] = useState(28);
   const [blurStrength, setBlurStrength] = useState(0.9);
   const [darkRatio, setDarkRatio] = useState(0.7);
+  const [shadowStrength, setShadowStrength] = useState(0.9);
+  const [shadowDarkRatio, setShadowDarkRatio] = useState(0.9);
   const [previewKey, setPreviewKey] = useState(0);
 
   const cleanBgHex = bgHex.replace(/^#/, "");
@@ -213,10 +222,10 @@ export default function ManualPhotoEditor({
     octx.clearRect(0, 0, overlay.width, overlay.height);
     octx.drawImage(mask, 0, 0);
     octx.globalCompositeOperation = "source-in";
-    octx.fillStyle = OVERLAY_STROKE;
+    octx.fillStyle = tool === "shadow" ? SHADOW_OVERLAY_STROKE : METAL_OVERLAY_STROKE;
     octx.fillRect(0, 0, overlay.width, overlay.height);
     octx.globalCompositeOperation = "source-over";
-  }, []);
+  }, [tool]);
 
   const initCanvases = useCallback((w: number, h: number) => {
     setNaturalSize({ w, h });
@@ -434,6 +443,40 @@ export default function ManualPhotoEditor({
     }
   };
 
+  const handleApplyShadow = async () => {
+    if (!token || !hasPaint) {
+      toast({
+        title: "Paint a region",
+        description: "Brush over the surface shadows you want to soften.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setGenerating(true);
+    try {
+      const maskBlob = await exportMaskBlob();
+      if (!maskBlob) throw new Error("Could not export brush mask");
+      const res = await apiBlurShadowBrush(token, workingS3Key, maskBlob, {
+        strength: shadowStrength,
+        darkRatio: shadowDarkRatio,
+        saveToGallery: false,
+      });
+      await applyWorkingResult(res.s3_key);
+      toast({
+        title: "Applied",
+        description: "Surface shadows softened. Continue editing or Save.",
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Failed",
+        description: err instanceof Error ? err.message : "Could not soften surface shadows",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!token || !dirty) return;
     setSaving(true);
@@ -605,14 +648,14 @@ export default function ManualPhotoEditor({
                   alt={showOriginal ? "Original" : "Working edit"}
                   className="block max-h-[70vh] max-w-full"
                   onLoad={(e) => {
-                    if (tool === "blur" && !showOriginal) {
+                    if (isBrushTool(tool) && !showOriginal) {
                       const img = e.currentTarget;
                       initCanvases(img.naturalWidth, img.naturalHeight);
                     }
                   }}
                   draggable={false}
                 />
-                {tool === "blur" && !showOriginal && (
+                {isBrushTool(tool) && !showOriginal && (
                   <>
                     <canvas ref={maskCanvasRef} className="hidden" />
                     <canvas
@@ -647,31 +690,34 @@ export default function ManualPhotoEditor({
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Apply background, metal, or blur merge as many times as you like. Edits stack on the
-              latest result. Save only when you are done.
+              Apply background, metal, blur merge, or shadow soften as many times as you like.
+              Edits stack on the latest result. Save only when you are done.
             </p>
 
             <Tabs
               value={tool}
               onValueChange={(v) => {
-                setTool(v as ManualEditTool);
-                if (v === "blur") {
+                const next = v as ManualEditTool;
+                setTool(next);
+                clearPaint();
+                if (isBrushTool(next)) {
                   setImageReady(false);
                   setPreviewKey((k) => k + 1);
-                } else {
-                  clearPaint();
                 }
               }}
             >
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="background" className="gap-1 text-xs sm:text-sm">
+              <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+                <TabsTrigger value="background" className="gap-1 px-1.5 text-xs sm:text-sm">
                   <PaintBucket className="h-3.5 w-3.5" /> Background
                 </TabsTrigger>
-                <TabsTrigger value="metal" className="gap-1 text-xs sm:text-sm">
+                <TabsTrigger value="metal" className="gap-1 px-1.5 text-xs sm:text-sm">
                   <Coins className="h-3.5 w-3.5" /> Metal
                 </TabsTrigger>
-                <TabsTrigger value="blur" className="gap-1 text-xs sm:text-sm">
+                <TabsTrigger value="blur" className="gap-1 px-1.5 text-xs sm:text-sm">
                   <Brush className="h-3.5 w-3.5" /> Blur
+                </TabsTrigger>
+                <TabsTrigger value="shadow" className="gap-1 px-1.5 text-xs sm:text-sm">
+                  <CloudFog className="h-3.5 w-3.5" /> Shadows
                 </TabsTrigger>
               </TabsList>
 
@@ -926,6 +972,102 @@ export default function ManualPhotoEditor({
                   disabled={!token || !hasPaint || showOriginal}
                 >
                   Apply blur merge
+                </Button>
+              </TabsContent>
+
+              <TabsContent value="shadow" className="space-y-4 pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Paint over contact shadows on the surface. They merge into nearby background
+                  colour — the jewellery is left untouched.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={brushMode === "paint" ? "default" : "outline"}
+                    className="gap-2"
+                    onClick={() => setBrushMode("paint")}
+                    disabled={showOriginal}
+                  >
+                    <Brush className="h-4 w-4" /> Paint
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={brushMode === "erase" ? "default" : "outline"}
+                    className="gap-2"
+                    onClick={() => setBrushMode("erase")}
+                    disabled={showOriginal}
+                  >
+                    <Eraser className="h-4 w-4" /> Erase
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={clearPaint}
+                    disabled={!hasPaint || showOriginal}
+                  >
+                    <RotateCcw className="h-4 w-4" /> Clear
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <Label>Brush size</Label>
+                    <span className="text-sm text-muted-foreground">{brushSize}px</span>
+                  </div>
+                  <Slider
+                    value={[brushSize]}
+                    onValueChange={(v) => setBrushSize(v[0] ?? 28)}
+                    min={8}
+                    max={Math.max(
+                      80,
+                      naturalSize
+                        ? Math.round(Math.min(naturalSize.w, naturalSize.h) * 0.12)
+                        : 120
+                    )}
+                    step={1}
+                    disabled={showOriginal}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <Label>Soften strength</Label>
+                    <span className="text-sm text-muted-foreground">{shadowStrength.toFixed(2)}</span>
+                  </div>
+                  <Slider
+                    value={[shadowStrength]}
+                    onValueChange={(v) => setShadowStrength(v[0] ?? 0.9)}
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    disabled={showOriginal}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <Label>Shadow sensitivity</Label>
+                    <span className="text-sm text-muted-foreground">{shadowDarkRatio.toFixed(2)}</span>
+                  </div>
+                  <Slider
+                    value={[shadowDarkRatio]}
+                    onValueChange={(v) => setShadowDarkRatio(v[0] ?? 0.9)}
+                    min={0.6}
+                    max={0.98}
+                    step={0.02}
+                    disabled={showOriginal}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Higher catches fainter contact shadows on the plate.
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleApplyShadow}
+                  disabled={!token || !hasPaint || showOriginal}
+                >
+                  Soften surface shadows
                 </Button>
               </TabsContent>
             </Tabs>
