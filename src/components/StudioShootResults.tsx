@@ -60,16 +60,16 @@ export default function StudioShootResults({
   };
 
   const imageItems = useMemo(() => {
-    if (!results?.frontImageS3Key || !results.frontImageUrl) return [];
-    const items = [
-      {
+    const items: Array<{ label: string; url: string; s3Key: string; file: string }> = [];
+    if (results?.frontImageS3Key && results.frontImageUrl) {
+      items.push({
         label: "Front View",
         url: results.frontImageUrl,
         s3Key: results.frontImageS3Key,
         file: "studio-shoot-front.png",
-      },
-    ];
-    if (results.sideImageS3Key && results.sideImageUrl) {
+      });
+    }
+    if (results?.sideImageS3Key && results.sideImageUrl) {
       items.push({
         label: "Side View",
         url: results.sideImageUrl,

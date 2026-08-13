@@ -1128,10 +1128,12 @@ async function compressImageForStudioShoot(file: File, strict: boolean): Promise
   });
 }
 
+export type StudioShootViews = "front" | "side" | "both";
+
 export type StudioShootResult = {
   status: "success" | "partial";
-  frontImageS3Key: string;
-  frontImageUrl: string;
+  frontImageS3Key?: string | null;
+  frontImageUrl?: string | null;
   frontError?: string | null;
   sideImageS3Key?: string | null;
   sideImageUrl?: string | null;
@@ -1139,7 +1141,7 @@ export type StudioShootResult = {
 };
 
 export type ApiCreateStudioShootOptions = {
-  generateSideView?: boolean;
+  views: StudioShootViews;
   sideViewFile?: File | null;
   aspectRatio?: TryOnAspectRatio;
   outputQuality?: TryOnOutputQuality;
@@ -1153,9 +1155,10 @@ export type ApiCreateStudioShootOptions = {
 export async function apiCreateStudioShoot(
   token: string,
   jewelleryFile: File,
-  options?: ApiCreateStudioShootOptions,
+  options: ApiCreateStudioShootOptions,
 ): Promise<StudioShootResult> {
-  const generateSideView = options?.generateSideView ?? false;
+  const views = options.views;
+  const generateSide = views === "side" || views === "both";
 
   const postStudioShootRequest = async (
     frontFile: File,
@@ -1164,31 +1167,31 @@ export async function apiCreateStudioShoot(
   ) => {
     const formData = new FormData();
     formData.append("jewellery_file", frontFile);
-    formData.append("generate_side_view", generateSideView ? "true" : "false");
-    formData.append("aspect_ratio", options?.aspectRatio ?? "2:3");
-    formData.append("output_quality", options?.outputQuality ?? "1K");
-    const brandKitUid = options?.brandKitUid;
+    formData.append("views", views);
+    formData.append("aspect_ratio", options.aspectRatio ?? "2:3");
+    formData.append("output_quality", options.outputQuality ?? "1K");
+    const brandKitUid = options.brandKitUid;
     if (brandKitUid === null) {
       formData.append("brand_kit_uid", "none");
     } else if (brandKitUid?.trim()) {
       formData.append("brand_kit_uid", brandKitUid.trim());
     }
-    if (generateSideView && sideFile) {
+    if (generateSide && sideFile) {
       formData.append("side_view_file", sideFile);
     }
-    const backgroundText = options?.backgroundText?.trim();
+    const backgroundText = options.backgroundText?.trim();
     if (backgroundText) {
       formData.append("background_text", backgroundText);
     }
-    if (options?.backgroundFile) {
+    if (options.backgroundFile) {
       formData.append("background_file", backgroundFile ?? options.backgroundFile);
     }
-    const productAngleS3Key = options?.productAngleS3Key?.trim();
-    if (productAngleS3Key) {
+    const productAngleS3Key = options.productAngleS3Key?.trim();
+    if (views !== "side" && productAngleS3Key) {
       formData.append("product_angle_s3_key", productAngleS3Key);
     }
-    const productSideAngleS3Key = options?.productSideAngleS3Key?.trim();
-    if (generateSideView && productSideAngleS3Key) {
+    const productSideAngleS3Key = options.productSideAngleS3Key?.trim();
+    if (generateSide && productSideAngleS3Key) {
       formData.append("product_side_angle_s3_key", productSideAngleS3Key);
     }
     return fetch(`${API_BASE_URL}/create-studio-shoot`, {
@@ -1200,10 +1203,10 @@ export async function apiCreateStudioShoot(
 
   const preparedFile = await compressImageForStudioShoot(jewelleryFile, false);
   const preparedSideFile =
-    generateSideView && options?.sideViewFile
+    generateSide && options.sideViewFile
       ? await compressImageForStudioShoot(options.sideViewFile, false)
       : null;
-  const preparedBackgroundFile = options?.backgroundFile
+  const preparedBackgroundFile = options.backgroundFile
     ? await compressImageForStudioShoot(options.backgroundFile, false)
     : null;
   let res = await postStudioShootRequest(preparedFile, preparedSideFile, preparedBackgroundFile);
@@ -1253,10 +1256,8 @@ export async function apiCreateStudioShoot(
     url?: string;
   };
 
-  const frontImageS3Key =
-    data.front_image_s3_key ?? data.cleaned_image_s3_key ?? data.image_s3_key ?? data.s3_key ?? "";
-  const frontImageUrl =
-    data.front_image_url ?? data.preview_url ?? data.image_url ?? data.url ?? "";
+  const frontImageS3Key = data.front_image_s3_key || data.cleaned_image_s3_key || data.image_s3_key || data.s3_key || null;
+  const frontImageUrl = data.front_image_url || data.preview_url || data.image_url || data.url || null;
 
   return {
     status: data.status ?? "success",

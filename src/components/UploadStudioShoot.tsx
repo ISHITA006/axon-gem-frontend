@@ -13,6 +13,7 @@ import {
   type ProductSideAngleRecord,
   type ProductBrandKitRecord,
   type StudioShootResult,
+  type StudioShootViews,
   type TryOnAspectRatio,
   type TryOnOutputQuality,
 } from "@/lib/api";
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,7 +35,9 @@ export default function UploadStudioShoot() {
   const { toast } = useToast();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [sideViewFile, setSideViewFile] = useState<File | null>(null);
-  const [generateSideView, setGenerateSideView] = useState(false);
+  const [views, setViews] = useState<StudioShootViews | "">("");
+  const generateFront = views === "front" || views === "both";
+  const generateSide = views === "side" || views === "both";
   const [aspectRatio, setAspectRatio] = useState<TryOnAspectRatio>("2:3");
   const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("1K");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -130,8 +134,8 @@ export default function UploadStudioShoot() {
   }, [token, wantProductAngle]);
 
   useEffect(() => {
-    if (!token || !generateSideView || !wantProductSideAngle) {
-      if (!generateSideView || !wantProductSideAngle) {
+    if (!token || !generateSide || !wantProductSideAngle) {
+      if (!generateSide || !wantProductSideAngle) {
         setProductSideAngles([]);
         setProductSideAngleUrls({});
         setProductSideAnglesLoading(false);
@@ -170,7 +174,7 @@ export default function UploadStudioShoot() {
     return () => {
       cancelled = true;
     };
-  }, [token, generateSideView, wantProductSideAngle]);
+  }, [token, generateSide, wantProductSideAngle]);
 
   const handleUseCustomBackgroundChange = (checked: boolean) => {
     setUseCustomBackground(checked);
@@ -270,21 +274,35 @@ export default function UploadStudioShoot() {
     };
   }, [backgroundFile]);
 
-  const handleGenerateSideViewChange = (checked: boolean) => {
-    setGenerateSideView(checked);
-    if (!checked) {
+  const handleViewsChange = (next: StudioShootViews) => {
+    setViews(next);
+    if (next === "front") {
       setSideViewFile(null);
       setWantProductSideAngle(false);
       setSelectedProductSideAngleUid(null);
+    }
+    if (next === "side") {
+      setWantProductAngle(false);
+      setSelectedProductAngleUid(null);
     }
   };
 
   const handleGenerate = async () => {
     if (!token) return;
+    if (!views) {
+      toast({
+        title: "View required",
+        description: "Select front view, side view, or both before generating.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!imageFile) {
       toast({
         title: "Image required",
-        description: "Please upload a raw jewellery image first.",
+        description: generateFront
+          ? "Please upload a raw jewellery image first."
+          : "Please upload a product photo first.",
         variant: "destructive",
       });
       return;
@@ -309,7 +327,7 @@ export default function UploadStudioShoot() {
       }
     }
 
-    if (wantProductAngle && !selectedProductAngleS3Key) {
+    if (generateFront && wantProductAngle && !selectedProductAngleS3Key) {
       toast({
         title: "Angle required",
         description: "Select a product angle from the library, or turn off angle selection.",
@@ -318,7 +336,7 @@ export default function UploadStudioShoot() {
       return;
     }
 
-    if (generateSideView && wantProductSideAngle && !selectedProductSideAngleS3Key) {
+    if (generateSide && wantProductSideAngle && !selectedProductSideAngleS3Key) {
       toast({
         title: "Side angle required",
         description: "Select a product side angle from the library, or turn off side angle selection.",
@@ -333,8 +351,8 @@ export default function UploadStudioShoot() {
 
     try {
       const shot = await apiCreateStudioShoot(token, imageFile, {
-        generateSideView,
-        sideViewFile: generateSideView ? sideViewFile : null,
+        views,
+        sideViewFile: generateSide ? sideViewFile : null,
         aspectRatio,
         outputQuality,
         brandKitUid: selectedBrandKitUid,
@@ -344,16 +362,22 @@ export default function UploadStudioShoot() {
             : undefined,
         backgroundFile:
           useCustomBackground && backgroundInputMode === "image" ? backgroundFile : null,
-        productAngleS3Key: wantProductAngle ? selectedProductAngleS3Key : null,
+        productAngleS3Key: generateFront && wantProductAngle ? selectedProductAngleS3Key : null,
         productSideAngleS3Key:
-          generateSideView && wantProductSideAngle ? selectedProductSideAngleS3Key : null,
+          generateSide && wantProductSideAngle ? selectedProductSideAngleS3Key : null,
       });
-      if (!shot.frontImageS3Key) {
+      if (generateFront && !shot.frontImageS3Key) {
         throw new Error("Front studio shoot image key not returned from API");
       }
+      if (generateSide && !shot.sideImageS3Key && !shot.sideError) {
+        throw new Error("Side studio shoot image key not returned from API");
+      }
+      if (!shot.frontImageS3Key && !shot.sideImageS3Key) {
+        throw new Error("Studio shoot image key not returned from API");
+      }
 
-      let frontUrl = shot.frontImageUrl;
-      if (!frontUrl) {
+      let frontUrl = shot.frontImageUrl ?? null;
+      if (shot.frontImageS3Key && !frontUrl) {
         frontUrl = await getPresignedUrl(token, shot.frontImageS3Key);
       }
 
@@ -374,17 +398,25 @@ export default function UploadStudioShoot() {
           description:
             shot.frontError && shot.sideError
               ? "Both views are ready, but fidelity verification flagged them for review."
-              : shot.sideError
+              : shot.sideError && shot.frontImageS3Key
                 ? "Front view is ready. Side view is ready but flagged for review."
-                : "Side view is ready. Front view is ready but flagged for review.",
+                : shot.frontError && shot.sideImageS3Key
+                  ? "Side view is ready. Front view is ready but flagged for review."
+                  : shot.sideError
+                    ? "Side view is ready but flagged for review."
+                    : "Front view is ready but flagged for review.",
           variant: "destructive",
         });
       } else {
+        const readyDescription =
+          views === "both"
+            ? "Front and side studio shots are ready."
+            : views === "side"
+              ? "Side studio shot is ready."
+              : "Front studio shot is ready.";
         toast({
           title: "Studio shoot ready",
-          description: generateSideView
-            ? "Front and side studio shots are ready."
-            : "Front studio shot is ready.",
+          description: readyDescription,
         });
       }
     } catch (err: unknown) {
@@ -422,109 +454,142 @@ export default function UploadStudioShoot() {
         <CardTitle className="text-base">Studio Shoot</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium">Views to generate *</p>
+            <p className="text-xs text-muted-foreground">
+              Choose front view, side view, or both before uploading references.
+            </p>
+          </div>
+          <RadioGroup
+            value={views || undefined}
+            onValueChange={(value) => handleViewsChange(value as StudioShootViews)}
+            className="grid gap-3 sm:grid-cols-3"
+          >
+            {(
+              [
+                { value: "front", title: "Front view", description: "Hero catalogue shot, straight-on." },
+                { value: "side", title: "Side view", description: "Profile / three-quarter shot." },
+                { value: "both", title: "Both views", description: "Front hero and side profile." },
+              ] as const
+            ).map((option) => (
+              <label
+                key={option.value}
+                htmlFor={`studio-views-${option.value}`}
+                className={cn(
+                  "flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3 transition hover:border-primary/50",
+                  views === option.value && "border-primary bg-primary/5 ring-1 ring-primary/30"
+                )}
+              >
+                <RadioGroupItem
+                  id={`studio-views-${option.value}`}
+                  value={option.value}
+                  className="mt-0.5"
+                />
+                <div className="space-y-1">
+                  <span className="text-sm font-medium leading-snug">{option.title}</span>
+                  <p className="text-xs text-muted-foreground">{option.description}</p>
+                </div>
+              </label>
+            ))}
+          </RadioGroup>
+        </div>
+
         {/* Reference images */}
         <div className="space-y-3">
           <div>
             <p className="text-sm font-medium">Reference images</p>
             <p className="text-xs text-muted-foreground">
-              Upload raw photos of the jewellery piece
+              {views
+                ? "Upload raw photos of the jewellery piece"
+                : "Select which views to generate first"}
             </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="front-view-upload">Front view *</Label>
-              <label
-                id="front-view-upload"
-                className="flex min-h-[220px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-6 transition hover:border-primary/50 hover:bg-muted/40"
-              >
-                {previewUrl ? (
-                  <img src={previewUrl} alt="Front view preview" className="max-h-48 w-full rounded object-contain" />
-                ) : (
-                  <>
-                    <ImageIcon className="mb-2 h-10 w-10 text-muted-foreground" />
-                    <span className="text-center text-sm text-muted-foreground">
-                      Click to upload front view
-                    </span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/*,.heic,.heif"
-                  className="hidden"
-                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                />
-              </label>
+          {!views ? (
+            <div className="flex min-h-[140px] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 py-6">
+              <p className="text-center text-sm text-muted-foreground">
+                Choose front view, side view, or both to continue.
+              </p>
             </div>
+          ) : (
+            <div
+              className={cn(
+                "grid gap-4 md:items-stretch",
+                generateSide ? "md:grid-cols-2" : "md:max-w-lg"
+              )}
+            >
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="front-view-upload">
+                  {generateFront ? "Front view *" : "Product photo *"}
+                </Label>
+                <label
+                  id="front-view-upload"
+                  className="flex min-h-[220px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-6 transition hover:border-primary/50 hover:bg-muted/40"
+                >
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt={generateFront ? "Front view preview" : "Product photo preview"}
+                      className="max-h-48 w-full rounded object-contain"
+                    />
+                  ) : (
+                    <>
+                      <ImageIcon className="mb-2 h-10 w-10 text-muted-foreground" />
+                      <span className="text-center text-sm text-muted-foreground">
+                        {generateFront ? "Click to upload front view" : "Click to upload product photo"}
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*,.heic,.heif"
+                    className="hidden"
+                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                  />
+                </label>
+              </div>
 
-            <div className="flex flex-col gap-2">
-              <Label
-                htmlFor={generateSideView ? "side-view-upload" : "generate-side-view"}
-                className={generateSideView ? undefined : "text-muted-foreground"}
-              >
-                Side view{generateSideView ? " (optional reference)" : ""}
-              </Label>
-              <div className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-lg border bg-muted/20">
-                {generateSideView && (
+              {generateSide && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="side-view-upload">Side view (optional reference)</Label>
                   <label
                     id="side-view-upload"
-                    className="flex flex-1 cursor-pointer flex-col items-center justify-center border-b border-dashed border-muted-foreground/25 bg-muted/20 p-4 transition hover:border-primary/50 hover:bg-muted/40"
+                    className="flex min-h-[220px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-6 transition hover:border-primary/50 hover:bg-muted/40"
                   >
-                      {sidePreviewUrl ? (
-                        <img
-                          src={sidePreviewUrl}
-                          alt="Side view preview"
-                          className="max-h-36 w-full rounded object-contain"
-                        />
-                      ) : (
-                        <>
-                          <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                          <span className="text-center text-sm text-muted-foreground">
-                            Click to upload side view
-                          </span>
-                          <span className="mt-1 text-center text-xs text-muted-foreground">
-                            Improves profile-shot accuracy
-                          </span>
-                        </>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*,.heic,.heif"
-                        className="hidden"
-                        onChange={(e) => setSideViewFile(e.target.files?.[0] || null)}
+                    {sidePreviewUrl ? (
+                      <img
+                        src={sidePreviewUrl}
+                        alt="Side view preview"
+                        className="max-h-48 w-full rounded object-contain"
                       />
-                    </label>
-                )}
-
-                <div
-                  className={
-                    generateSideView
-                      ? "flex shrink-0 items-start gap-3 px-4 py-3"
-                      : "flex flex-1 items-center gap-3 px-4 py-6"
-                  }
-                >
-                  <Checkbox
-                    id="generate-side-view"
-                    checked={generateSideView}
-                    onCheckedChange={(checked) => handleGenerateSideViewChange(checked === true)}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="generate-side-view" className="cursor-pointer text-sm leading-snug">
-                      Also generate side view
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Adds a profile studio shot alongside the front hero image.
-                    </p>
-                  </div>
+                    ) : (
+                      <>
+                        <ImageIcon className="mb-2 h-10 w-10 text-muted-foreground" />
+                        <span className="text-center text-sm text-muted-foreground">
+                          Click to upload side view
+                        </span>
+                        <span className="mt-1 text-center text-xs text-muted-foreground">
+                          Improves profile-shot accuracy
+                        </span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,.heic,.heif"
+                      className="hidden"
+                      onChange={(e) => setSideViewFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
                 </div>
-              </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Front-view angle / pose */}
-        <div className="space-y-3">
+        {generateFront && (
+          <div className="space-y-3">
           <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
             <Checkbox
               id="want-product-angle"
@@ -605,10 +670,11 @@ export default function UploadStudioShoot() {
               )}
             </div>
           )}
-        </div>
+          </div>
+        )}
 
         {/* Side-view angle / pose — only when side generation is enabled */}
-        {generateSideView && (
+        {generateSide && (
           <div className="space-y-3">
             <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
               <Checkbox
@@ -869,10 +935,11 @@ export default function UploadStudioShoot() {
           onClick={handleGenerate}
           disabled={
             !token ||
+            !views ||
             !imageFile ||
             shooting ||
-            (wantProductAngle && !selectedProductAngleS3Key) ||
-            (generateSideView && wantProductSideAngle && !selectedProductSideAngleS3Key)
+            (generateFront && wantProductAngle && !selectedProductAngleS3Key) ||
+            (generateSide && wantProductSideAngle && !selectedProductSideAngleS3Key)
           }
         >
           {shooting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
