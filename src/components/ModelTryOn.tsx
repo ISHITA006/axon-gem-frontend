@@ -389,13 +389,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   }, [generateCloseUp, token]);
 
   useEffect(() => {
-    if (!useClothing || !token) {
-      setClothingItems([]);
-      setClothingUrls({});
-      setSelectedClothingUid(null);
-      setClothingLoading(false);
-      return;
-    }
+    if (!token) return;
 
     let cancelled = false;
     setClothingLoading(true);
@@ -428,7 +422,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     return () => {
       cancelled = true;
     };
-  }, [useClothing, token]);
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -877,91 +871,6 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         </div>
       </div>
 
-      {/* Clothing Selection (optional) */}
-      <Collapsible open={useClothing}>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Clothing (optional)</CardTitle>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="useClothing"
-                  checked={useClothing}
-                  onCheckedChange={(v) => {
-                    const next = !!v;
-                    setUseClothing(next);
-                    if (!next) setSelectedClothingUid(null);
-                  }}
-                />
-                <Label htmlFor="useClothing" className="text-xs">
-                  Use clothing
-                </Label>
-              </div>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Pick a saved clothing item. The model will be styled using its stored description
-                (colour, neckline, and print) instead of the automatic style note.
-              </p>
-              {clothingLoading ? (
-                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
-                  ))}
-                </div>
-              ) : clothingItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No clothing yet. Add some under Manage Clothing.
-                </p>
-              ) : (
-                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-                  {clothingItems.map((item) => (
-                    <button
-                      key={item.uid}
-                      type="button"
-                      title={item.description}
-                      onClick={() =>
-                        setSelectedClothingUid((prev) => (prev === item.uid ? null : item.uid))
-                      }
-                      className={cn(
-                        "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                        selectedClothingUid === item.uid
-                          ? "border-primary ring-2 ring-primary/30"
-                          : "border-transparent hover:border-muted-foreground/30"
-                      )}
-                    >
-                      {clothingUrls[item.uid] ? (
-                        <img
-                          src={clothingUrls[item.uid]}
-                          alt={item.name}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-muted">
-                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
-                        <p className="truncate font-medium">{item.name}</p>
-                        <p className="line-clamp-2 text-[11px] text-white/85">{item.description}</p>
-                      </div>
-                      {selectedClothingUid === item.uid && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
-                          <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
-
       {/* Background Selection (optional) */}
       <Collapsible open={useBackground}>
         <Card>
@@ -1296,6 +1205,89 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
                   )}
                 </div>
               )}
+
+              <div className="space-y-4 border-t pt-4">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="wantClothing"
+                    checked={useClothing}
+                    onCheckedChange={(v) => {
+                      const next = !!v;
+                      setUseClothing(next);
+                      if (!next) setSelectedClothingUid(null);
+                    }}
+                  />
+                  <Label htmlFor="wantClothing" className="text-sm font-normal leading-none">
+                    Select clothing (optional)
+                  </Label>
+                </div>
+
+                {useClothing && (
+                  <div>
+                    <h3 className="mb-3 text-sm font-semibold">Select clothing</h3>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Dress the model in this saved item. Its stored description (colour, neckline,
+                      and print) replaces the automatic style note.
+                    </p>
+                    {clothingLoading ? (
+                      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
+                        ))}
+                      </div>
+                    ) : clothingItems.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No clothing yet. Add some under Manage Clothing.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                        {clothingItems.map((item) => (
+                          <button
+                            key={item.uid}
+                            type="button"
+                            title={item.description}
+                            onClick={() =>
+                              setSelectedClothingUid((prev) =>
+                                prev === item.uid ? null : item.uid
+                              )
+                            }
+                            className={cn(
+                              "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                              selectedClothingUid === item.uid
+                                ? "border-primary ring-2 ring-primary/30"
+                                : "border-transparent hover:border-muted-foreground/30"
+                            )}
+                          >
+                            {clothingUrls[item.uid] ? (
+                              <img
+                                src={clothingUrls[item.uid]}
+                                alt={item.name}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center bg-muted">
+                                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-xs text-white">
+                              <p className="truncate font-medium">{item.name}</p>
+                              <p className="line-clamp-2 text-[11px] text-white/85">
+                                {item.description}
+                              </p>
+                            </div>
+                            {selectedClothingUid === item.uid && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                                <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
@@ -1312,7 +1304,8 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
             !selectedModelUid ||
             (wantModelPose && !selectedModelPoseS3Key) ||
             (generateCloseUp && wantCloseUpPose && !selectedCloseUpPoseS3Key) ||
-            (useBackground && !selectedBackground)
+            (useBackground && !selectedBackground) ||
+            (useClothing && !selectedClothingUid)
           }
           className="min-w-[220px]"
         >
