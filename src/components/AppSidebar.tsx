@@ -16,6 +16,7 @@ import {
   SquareUser,
   BriefcaseBusiness,
   Shirt,
+  BarChart3,
 } from "lucide-react";
 import {
   Sidebar,
@@ -50,7 +51,8 @@ export type TabValue =
   | "catalogViewerManagement"
   | "editImage"
   | "brandKit"
-  | "productBrandKit";
+  | "productBrandKit"
+  | "generationUsage";
 
 const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = [
   { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
@@ -59,6 +61,7 @@ const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = 
   { title: "Product Shoot Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
   { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
   { title: "My Gallery", value: "gallery", icon: Images },
+  { title: "Generation Usage", value: "generationUsage", icon: BarChart3 },
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
   { title: "Manage Models", value: "models", icon: Users },
   { title: "Manage Poses", value: "poses", icon: PersonStanding },

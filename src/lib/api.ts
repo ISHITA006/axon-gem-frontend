@@ -1722,3 +1722,43 @@ export async function apiDeleteProductBrandKit(token: string, uid: string) {
   });
   await assertOk(res, "Failed to delete product brand kit");
 }
+
+export type GenerationModelBreakdown = {
+  nanobanana_pro: number;
+  nanobanana_2: number;
+  nanobanana_1: number;
+};
+
+export type GenerationCategoryBreakdown = {
+  count: number;
+  by_model: GenerationModelBreakdown;
+  by_image_size: Record<string, number>;
+};
+
+export type GenerationUsage = {
+  month: string;
+  is_current_month: boolean;
+  product_shoot: number;
+  model_shoot: number;
+  edited_image: number;
+  total: number;
+  by_model: GenerationModelBreakdown;
+  by_image_size: Record<string, number>;
+  category_breakdown: {
+    product_shoot: GenerationCategoryBreakdown;
+    model_shoot: GenerationCategoryBreakdown;
+    edited_image: GenerationCategoryBreakdown;
+  };
+  available_months: string[];
+};
+
+export async function apiGetGenerationUsage(token: string, month?: string) {
+  const params = new URLSearchParams();
+  if (month) params.set("month", month);
+  const query = params.toString();
+  const res = await fetch(`${API_BASE_URL}/generation-usage${query ? `?${query}` : ""}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch generation usage");
+  return res.json() as Promise<GenerationUsage>;
+}

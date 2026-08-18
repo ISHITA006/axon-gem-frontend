@@ -23,6 +23,7 @@ import ManageCatalogue from "@/components/ManageCatalogue";
 import EditImage from "@/components/EditImage";
 import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
+import GenerationUsage from "@/components/GenerationUsage";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
@@ -155,6 +156,7 @@ export default function Index() {
               )
             )}
 
+            {activeTab === "generationUsage" && <GenerationUsage />}
             {activeTab === "gallery" && (
               <MyGallery
                 onEditImage={handleEditImage}
