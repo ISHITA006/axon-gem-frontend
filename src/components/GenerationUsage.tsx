@@ -1,8 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChevronLeft, ChevronRight, Gem, SquareUser, Wand2 } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Download, Gem, IndianRupee, Mail, SquareUser, Wand2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { apiGetGenerationUsage, type GenerationModelBreakdown } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import {
+  apiDownloadGenerationInvoice,
+  apiGetGenerationUsage,
+  apiSendGenerationInvoice,
+  type GenerationBillingRateRow,
+  type GenerationModelBreakdown,
+} from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +28,47 @@ const SIZE_BAR: Record<(typeof SIZE_KEYS)[number], string> = {
   "2K": "bg-indigo-500",
   "4K": "bg-rose-500",
 };
+
+const BILLING_TIERS: {
+  model: "nanobanana_2" | "nanobanana_pro";
+  label: string;
+  subtitle: string;
+}[] = [
+  { model: "nanobanana_2", label: "Standard", subtitle: "Nano Banana 2" },
+  { model: "nanobanana_pro", label: "Premium", subtitle: "Nano Banana Pro" },
+];
+
+function formatInr(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function rateRowFor(
+  rows: GenerationBillingRateRow[] | undefined,
+  model: string,
+  size: string,
+): GenerationBillingRateRow {
+  return (
+    rows?.find((row) => row.model === model && row.image_size === size) ?? {
+      model,
+      image_size: size,
+      unit_price_inr: 0,
+      count: 0,
+      amount_inr: 0,
+    }
+  );
+}
+
+function amountForModel(rows: GenerationBillingRateRow[] | undefined, model: string): number {
+  return (rows ?? []).filter((row) => row.model === model).reduce((sum, row) => sum + row.amount_inr, 0);
+}
+
+function amountForSize(rows: GenerationBillingRateRow[] | undefined, size: string): number {
+  return (rows ?? []).filter((row) => row.image_size === size).reduce((sum, row) => sum + row.amount_inr, 0);
+}
 
 function formatMonthLabel(yearMonth: string): string {
   const [year, month] = yearMonth.split("-").map(Number);
@@ -56,7 +104,7 @@ function BreakdownBars({
   items,
   total,
 }: {
-  items: { key: string; label: string; count: number; barClass: string }[];
+  items: { key: string; label: string; count: number; barClass: string; amount?: number }[];
   total: number;
 }) {
   return (
@@ -71,7 +119,7 @@ function BreakdownBars({
                 key={item.key}
                 className={item.barClass}
                 style={{ width: `${(item.count / total) * 100}%` }}
-                title={`${item.label}: ${item.count}`}
+                title={`${item.label}: ${item.count}${item.amount != null ? ` · ${formatInr(item.amount)}` : ""}`}
               />
             ) : null,
           )
@@ -88,6 +136,9 @@ function BreakdownBars({
               <span>{total === 0 ? "0%" : `${share(item.count, total)}%`}</span>
             </div>
             <p className="mt-1 text-xl font-semibold tabular-nums">{item.count}</p>
+            {item.amount != null ? (
+              <p className="text-xs text-muted-foreground tabular-nums">{formatInr(item.amount)}</p>
+            ) : null}
           </div>
         ))}
       </div>
@@ -97,7 +148,10 @@ function BreakdownBars({
 
 export default function GenerationUsage() {
   const { token } = useAuth();
+  const { toast } = useToast();
   const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const [sendingInvoice, setSendingInvoice] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["generation-usage", selectedMonth ?? "current"],
@@ -123,6 +177,7 @@ export default function GenerationUsage() {
           key: "product",
           title: "Product shoot",
           count: data.product_shoot,
+          amount: data.billing.by_category.product_shoot,
           description: "Front and side views",
           icon: Gem,
           barClass: "bg-amber-500",
@@ -135,6 +190,7 @@ export default function GenerationUsage() {
           key: "model",
           title: "Model shoot",
           count: data.model_shoot,
+          amount: data.billing.by_category.model_shoot,
           description: "Main and close-up views",
           icon: SquareUser,
           barClass: "bg-violet-500",
@@ -147,6 +203,7 @@ export default function GenerationUsage() {
           key: "edited",
           title: "Edited images",
           count: data.edited_image,
+          amount: data.billing.by_category.edited_image,
           description: "AI image edits",
           icon: Wand2,
           barClass: "bg-teal-500",
@@ -160,16 +217,59 @@ export default function GenerationUsage() {
 
   const total = data?.total ?? 0;
 
+  const downloadInvoice = async () => {
+    if (!token || !data?.month) return;
+    setDownloadingInvoice(true);
+    try {
+      await apiDownloadGenerationInvoice(token, data.month);
+    } catch (err) {
+      toast({
+        title: "Could not download invoice",
+        description: err instanceof Error ? err.message : "Failed to generate PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  };
+
+  const emailInvoice = async () => {
+    if (!token || !data?.month) return;
+    const monthName = formatMonthLabel(data.month);
+    const confirmed = window.confirm(
+      `Email the ${monthName} invoice to axoniqtech@gmail.com? This includes generation charges plus monthly software usage charges.`,
+    );
+    if (!confirmed) return;
+    setSendingInvoice(true);
+    try {
+      const result = await apiSendGenerationInvoice(token, data.month, true);
+      toast({
+        title: result.status === "already_sent" ? "Invoice already sent" : "Invoice emailed",
+        description: `${result.invoice_number} · ${formatInr(result.total_inr)} sent to ${result.recipient_email}.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Could not send invoice",
+        description: err instanceof Error ? err.message : "Failed to email invoice",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingInvoice(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Generation usage</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Successful image generations for this account, broken down by category.
+            Successful image generations and live billing for this account, by category, model, and
+            output quality. A PDF invoice is emailed to axoniqtech@gmail.com on the 1st of each month
+            at 9:00 AM IST for the previous month.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="icon"
@@ -205,6 +305,18 @@ export default function GenerationUsage() {
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
+          <Button
+            variant="outline"
+            onClick={downloadInvoice}
+            disabled={!data || downloadingInvoice}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {downloadingInvoice ? "Preparing…" : "PDF"}
+          </Button>
+          <Button onClick={emailInvoice} disabled={!data || sendingInvoice}>
+            <Mail className="mr-2 h-4 w-4" />
+            {sendingInvoice ? "Sending…" : "Email invoice"}
+          </Button>
         </div>
       </div>
 
@@ -231,15 +343,31 @@ export default function GenerationUsage() {
         <>
           <Card>
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
-              <div>
-                <CardDescription>
-                  {data.is_current_month ? "This month" : formatMonthLabel(data.month)}
-                </CardDescription>
-                <CardTitle className="mt-1 text-4xl tabular-nums">{data.total}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {data.total === 1 ? "generation" : "generations"}
-                  {data.is_current_month ? " so far" : ""}
-                </p>
+              <div className="grid min-w-0 flex-1 gap-6 sm:grid-cols-2 sm:gap-12">
+                <div>
+                  <CardDescription>
+                    {data.is_current_month ? "This month" : formatMonthLabel(data.month)}
+                  </CardDescription>
+                  <CardTitle className="mt-1 text-4xl tabular-nums">{data.total}</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {data.total === 1 ? "generation" : "generations"}
+                    {data.is_current_month ? " so far" : ""}
+                  </p>
+                </div>
+                <div>
+                  <CardDescription>Billed</CardDescription>
+                  <CardTitle className="mt-1 text-4xl tabular-nums">
+                    {formatInr(data.billing.total_inr)}
+                  </CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {data.billing.billed_count === 1
+                      ? "1 priced generation"
+                      : `${data.billing.billed_count} priced generations`}
+                    {data.billing.unpriced_count > 0
+                      ? ` · ${data.billing.unpriced_count} unpriced`
+                      : ""}
+                  </p>
+                </div>
               </div>
               <Badge variant="secondary" className="gap-1">
                 <BarChart3 className="h-3.5 w-3.5" />
@@ -257,7 +385,7 @@ export default function GenerationUsage() {
                         key={category.key}
                         className={category.barClass}
                         style={{ width: `${(category.count / total) * 100}%` }}
-                        title={`${category.title}: ${category.count}`}
+                        title={`${category.title}: ${category.count} · ${formatInr(category.amount)}`}
                       />
                     ) : null,
                   )
@@ -268,6 +396,7 @@ export default function GenerationUsage() {
                   <span key={category.key} className="flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${category.barClass}`} />
                     {category.title}
+                    <span className="tabular-nums">{formatInr(category.amount)}</span>
                   </span>
                 ))}
               </div>
@@ -286,6 +415,9 @@ export default function GenerationUsage() {
                       <Icon className={`h-4 w-4 ${category.iconClass}`} />
                     </div>
                     <CardTitle className="text-3xl tabular-nums">{category.count}</CardTitle>
+                    <p className="text-lg font-semibold tabular-nums text-foreground">
+                      {formatInr(category.amount)}
+                    </p>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">{category.description}</p>
@@ -321,6 +453,10 @@ export default function GenerationUsage() {
                     label: model.label,
                     count: data.by_model[model.key] ?? 0,
                     barClass: model.barClass,
+                    amount:
+                      model.key === "nanobanana_1"
+                        ? undefined
+                        : amountForModel(data.billing.by_rate, model.key),
                   }))}
                 />
               </CardContent>
@@ -338,11 +474,76 @@ export default function GenerationUsage() {
                     label: size,
                     count: data.by_image_size[size] ?? 0,
                     barClass: SIZE_BAR[size],
+                    amount: amountForSize(data.billing.by_rate, size),
                   }))}
                 />
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Live billing</CardTitle>
+                  <CardDescription>
+                    Each successful generation is billed by the model that returned the image and the
+                    requested output quality.
+                  </CardDescription>
+                </div>
+                <IndianRupee className="mt-0.5 h-4 w-4 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {BILLING_TIERS.map((tier) => {
+                  const rows = SIZE_KEYS.map((size) => rateRowFor(data.billing.by_rate, tier.model, size));
+                  const subtotal = rows.reduce((sum, row) => sum + row.amount_inr, 0);
+                  const count = rows.reduce((sum, row) => sum + row.count, 0);
+                  return (
+                    <div key={tier.model} className="rounded-lg border">
+                      <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium">{tier.label}</p>
+                          <p className="text-xs text-muted-foreground">{tier.subtitle}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold tabular-nums">{formatInr(subtotal)}</p>
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {count} {count === 1 ? "image" : "images"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="divide-y">
+                        {rows.map((row) => (
+                          <div
+                            key={`${row.model}-${row.image_size}`}
+                            className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5 text-sm"
+                          >
+                            <span className="flex items-center gap-1.5 font-medium">
+                              <span className={`h-2 w-2 rounded-full ${SIZE_BAR[row.image_size as (typeof SIZE_KEYS)[number]]}`} />
+                              {row.image_size}
+                            </span>
+                            <span className="text-muted-foreground tabular-nums">
+                              {formatInr(row.unit_price_inr)} × {row.count}
+                            </span>
+                            <span className="tabular-nums font-medium">{formatInr(row.amount_inr)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {data.billing.unpriced_count > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {data.billing.unpriced_count}{" "}
+                  {data.billing.unpriced_count === 1 ? "generation has" : "generations have"} no
+                  matching rate yet — Nano Banana 1, or a missing model/size.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
@@ -365,6 +566,16 @@ export default function GenerationUsage() {
                 Model attribution: Nano Banana Pro if it returned an image even once for that
                 generation. If Pro returned 500/503 or no image, the generation is attributed to
                 Nano Banana 2.
+              </p>
+              <p>
+                Billing is calculated live from the current rate chart: Standard (Nano Banana 2) is
+                ₹50 for 1K, ₹70 for 2K, and ₹100 for 4K. Premium (Nano Banana Pro) is ₹100 for 1K
+                and 2K, and ₹130 for 4K.
+              </p>
+              <p>
+                On the 1st of every month at 9:00 AM IST, axonGem emails a PDF invoice for the
+                previous month to axoniqtech@gmail.com. The invoice includes the model × output-quality
+                breakdown plus a fixed monthly software usage fee.
               </p>
             </CardContent>
           </Card>

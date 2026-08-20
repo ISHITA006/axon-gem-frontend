@@ -1731,8 +1731,30 @@ export type GenerationModelBreakdown = {
 
 export type GenerationCategoryBreakdown = {
   count: number;
+  amount_inr: number;
   by_model: GenerationModelBreakdown;
   by_image_size: Record<string, number>;
+};
+
+export type GenerationBillingRateRow = {
+  model: string;
+  image_size: string;
+  unit_price_inr: number;
+  count: number;
+  amount_inr: number;
+};
+
+export type GenerationBilling = {
+  currency: "INR" | string;
+  total_inr: number;
+  billed_count: number;
+  unpriced_count: number;
+  by_category: {
+    product_shoot: number;
+    model_shoot: number;
+    edited_image: number;
+  };
+  by_rate: GenerationBillingRateRow[];
 };
 
 export type GenerationUsage = {
@@ -1749,6 +1771,7 @@ export type GenerationUsage = {
     model_shoot: GenerationCategoryBreakdown;
     edited_image: GenerationCategoryBreakdown;
   };
+  billing: GenerationBilling;
   available_months: string[];
 };
 
@@ -1761,4 +1784,60 @@ export async function apiGetGenerationUsage(token: string, month?: string) {
   });
   await assertOk(res, "Failed to fetch generation usage");
   return res.json() as Promise<GenerationUsage>;
+}
+
+export type GenerationInvoiceSendResult = {
+  status: "sent" | "already_sent" | string;
+  invoice_number: string;
+  year_month: string;
+  recipient_email: string;
+  software_fee_inr: number;
+  generation_total_inr: number;
+  total_inr: number;
+  billed_count: number;
+  sent_at: string | null;
+};
+
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const utfMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) return decodeURIComponent(utfMatch[1]);
+  const match = header.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+export async function apiDownloadGenerationInvoice(token: string, month?: string) {
+  const params = new URLSearchParams();
+  if (month) params.set("month", month);
+  const query = params.toString();
+  const res = await fetch(`${API_BASE_URL}/generation-usage/invoices/pdf${query ? `?${query}` : ""}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to download invoice");
+  const blob = await res.blob();
+  const filename = filenameFromContentDisposition(
+    res.headers.get("Content-Disposition"),
+    `axonGem-invoice-${month || "previous"}.pdf`,
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function apiSendGenerationInvoice(token: string, month?: string, force = true) {
+  const params = new URLSearchParams();
+  if (month) params.set("month", month);
+  if (force) params.set("force", "true");
+  const query = params.toString();
+  const res = await fetch(`${API_BASE_URL}/generation-usage/invoices/send${query ? `?${query}` : ""}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to send invoice");
+  return res.json() as Promise<GenerationInvoiceSendResult>;
 }
