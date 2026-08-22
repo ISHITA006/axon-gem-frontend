@@ -17,7 +17,6 @@ import {
   BriefcaseBusiness,
   Shirt,
   BarChart3,
-  Sparkles,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,8 +34,6 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export type TabValue =
   | "tryon"
-  | "sdTryon"
-  | "compositeTryon"
   | "colour"
   | "length"
   | "manualPhotoEdit"
@@ -60,8 +57,6 @@ export type TabValue =
 const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = [
   { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
   { title: "Model Shoot", value: "tryon", icon: SquareUser },
-  { title: "Composite Try-On", value: "compositeTryon", icon: Sparkles },
-  { title: "SD Model Shoot", value: "sdTryon", icon: Aperture },
   { title: "Edit Image", value: "editImage", icon: Wand2 },
   { title: "Product Shoot Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
   { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
