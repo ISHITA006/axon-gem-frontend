@@ -7,7 +7,7 @@ async function asUploadableImage(file: File): Promise<File> {
   return compressImageForUpload(file);
 }
 
-type ApiErrorDetail = string | { msg?: string }[] | undefined;
+type ApiErrorDetail = string | { msg?: string }[] | { message?: string } | undefined;
 
 async function parseApiErrorMessage(res: Response, fallback: string): Promise<string> {
   const body = (await res.json().catch(() => ({ detail: fallback }))) as {
@@ -17,6 +17,10 @@ async function parseApiErrorMessage(res: Response, fallback: string): Promise<st
   };
   const { detail } = body;
   if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail) && "message" in detail) {
+    const message = (detail as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
   if (Array.isArray(detail)) {
     const msgs = detail.map((d) => d?.msg).filter((m): m is string => Boolean(m));
     if (msgs.length) return msgs.join(", ");
@@ -1791,11 +1795,22 @@ export type GenerationInvoiceSendResult = {
   invoice_number: string;
   year_month: string;
   recipient_email: string;
+  cc_emails: string[];
+  bcc_emails: string[];
   software_fee_inr: number;
   generation_total_inr: number;
   total_inr: number;
   billed_count: number;
   sent_at: string | null;
+};
+
+export type InvoiceSettings = {
+  recipient_email: string | null;
+  to_email: string;
+  cc_emails: string[];
+  bcc_emails: string[];
+  default_recipient_email: string;
+  bcc_email: string;
 };
 
 function filenameFromContentDisposition(header: string | null, fallback: string): string {
@@ -1840,4 +1855,29 @@ export async function apiSendGenerationInvoice(token: string, month?: string, fo
   });
   await assertOk(res, "Failed to send invoice");
   return res.json() as Promise<GenerationInvoiceSendResult>;
+}
+
+export async function apiGetInvoiceSettings(token: string) {
+  const res = await fetch(`${API_BASE_URL}/generation-usage/invoice-settings`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch invoice settings");
+  return res.json() as Promise<InvoiceSettings>;
+}
+
+export async function apiUpdateInvoiceSettings(
+  token: string,
+  recipientEmail: string | null,
+  ccEmails: string[] = [],
+) {
+  const res = await fetch(`${API_BASE_URL}/generation-usage/invoice-settings`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ recipient_email: recipientEmail, cc_emails: ccEmails }),
+  });
+  await assertOk(res, "Failed to save invoice email");
+  return res.json() as Promise<InvoiceSettings>;
 }
