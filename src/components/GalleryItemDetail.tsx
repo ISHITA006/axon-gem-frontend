@@ -20,7 +20,7 @@ import { formatTableDate } from "@/components/catalogue/utils";
 import { FullscreenCarouselDialog } from "@/components/catalogue/images/FullscreenCarouselDialog";
 import { ImageKeyThumb } from "@/components/catalogue/images/ImageKeyThumb";
 import { useToast } from "@/hooks/use-toast";
-import { apiDeleteGalleryItem, getPresignedUrl, type GalleryItem, type TryOnAnalysis } from "@/lib/api";
+import { apiDeleteGalleryItem, galleryImageCaptions, getPresignedUrl, type GalleryItem, type TryOnAnalysis } from "@/lib/api";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type Props = {
@@ -70,6 +70,12 @@ export function GalleryItemDetail({
   });
 
   const analysis = item.analysis as TryOnAnalysis | null | undefined;
+  const captions = galleryImageCaptions(item.analysis);
+  const analysisForDisplay = item.analysis
+    ? Object.fromEntries(
+        Object.entries(item.analysis).filter(([key]) => key !== "image_captions" && key !== "image_views")
+      )
+    : null;
   const carouselTitle = `${categoryTitle}`;
 
   const confirmDelete = async () => {
@@ -149,13 +155,18 @@ export function GalleryItemDetail({
                 <button
                   key={k}
                   type="button"
-                  className="contents"
+                  className="flex flex-col items-center gap-1"
                   onClick={() => {
                     setCarouselStartIndex(i);
                     setCarouselOpen(true);
                   }}
                 >
                   <ImageKeyThumb token={token} s3Key={k} clickable />
+                  {captions[k] ? (
+                    <span className="max-w-24 text-center text-[11px] leading-tight text-muted-foreground">
+                      {captions[k]}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -167,6 +178,7 @@ export function GalleryItemDetail({
             token={token}
             title={carouselTitle}
             s3Keys={imageKeys}
+            captions={captions}
             startIndex={carouselStartIndex}
             onChangeProductColour={onChangeColour}
             onChangeProductLength={onChangeLength}
@@ -181,10 +193,10 @@ export function GalleryItemDetail({
             <ViewField label="Edited" value={formatTableDate(item.edited_at)} />
           </div>
 
-          {item.analysis && Object.keys(item.analysis).length > 0 ? (
+          {analysisForDisplay && Object.keys(analysisForDisplay).length > 0 ? (
             <div className="space-y-2">
               <div className="text-base font-semibold">Analysis</div>
-              <pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">{JSON.stringify(item.analysis, null, 2)}</pre>
+              <pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">{JSON.stringify(analysisForDisplay, null, 2)}</pre>
             </div>
           ) : null}
         </CardContent>

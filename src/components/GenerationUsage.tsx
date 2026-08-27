@@ -778,11 +778,11 @@ export default function GenerationUsage() {
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>
                 Each returned product-shoot view counts as 1 generation. Front/side only is 1; front and
-                side together are 2.
+                side together are 2. Complementary edits on a product shoot are billed the same way.
               </p>
               <p>
                 Each returned model-shoot view counts as 1 generation. A main view/close-up view is 1; main plus
-                close-up is 2.
+                close-up is 2. Complementary edits on a model shoot are billed the same way.
               </p>
               <p>
                 Each AI image edit — including the Edit Image tool, change colour, and change

@@ -14,6 +14,7 @@ export function FullscreenCarouselDialog({
   token,
   title,
   s3Keys,
+  captions,
   startIndex,
   onChangeProductColour,
   onChangeProductLength,
@@ -26,6 +27,7 @@ export function FullscreenCarouselDialog({
   token: string | null;
   title: string;
   s3Keys: string[];
+  captions?: Record<string, string>;
   startIndex: number;
   onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
   onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
@@ -46,6 +48,7 @@ export function FullscreenCarouselDialog({
   }, [open, safeStart]);
 
   const currentKey = s3Keys[idx] ?? null;
+  const currentCaption = currentKey && captions?.[currentKey] ? captions[currentKey] : null;
   const urlQuery = useQuery({
     queryKey: ["presigned-url", token, currentKey],
     enabled: Boolean(open && token && currentKey),
@@ -210,6 +213,12 @@ export function FullscreenCarouselDialog({
               {s3Keys.length ? (
                 <span>
                   Image <span className="font-medium text-foreground">{idx + 1}</span> / {s3Keys.length}
+                  {currentCaption ? (
+                    <span>
+                      {" "}
+                      · <span className="font-medium text-foreground">{currentCaption}</span>
+                    </span>
+                  ) : null}
                 </span>
               ) : (
                 <span>0 / 0</span>

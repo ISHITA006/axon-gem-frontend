@@ -646,6 +646,133 @@ export async function apiGetModelShootDraft(token: string, draftUid: string) {
   return res.json() as Promise<ModelShootDraft>;
 }
 
+export type ProductShootView = "front" | "side";
+
+/** One stored attempt inside a product-shoot draft (1/3, 2/3, …). */
+export type ProductShootGeneration = {
+  uid: string;
+  attempt_index: number;
+  attempt_label: string;
+  front_image_s3_key?: string | null;
+  side_image_s3_key?: string | null;
+  fidelity_verified: boolean;
+  mismatches: string[];
+  notes?: string | null;
+  suggested_edit_prompt?: string | null;
+  applied_edit_prompt?: string | null;
+  edited_view?: ProductShootView | null;
+  front_suggested_edit_prompt?: string | null;
+  side_suggested_edit_prompt?: string | null;
+  front_mismatches?: string[];
+  side_mismatches?: string[];
+  front_notes?: string | null;
+  side_notes?: string | null;
+  front_applied_edit_prompt?: string | null;
+  side_applied_edit_prompt?: string | null;
+  saved: boolean;
+  saved_at?: string | null;
+  created_at: string;
+};
+
+/**
+ * A product-shoot review session. Saving a generation adds it to the shoot's
+ * gallery item without closing the session, so further edits can be saved to
+ * that same item.
+ */
+export type ProductShootDraft = {
+  uid: string;
+  status: "in_review" | "discarded";
+  max_generations: number;
+  generations_used: number;
+  generations_remaining: number;
+  generations_saved: number;
+  can_regenerate: boolean;
+  can_resume_review?: boolean;
+  analysis?: Record<string, unknown> | null;
+  gallery_uid?: string | null;
+  views: "front" | "side" | "both";
+  front_edits_used?: number;
+  front_edits_remaining?: number;
+  can_regenerate_front?: boolean;
+  side_edits_used?: number;
+  side_edits_remaining?: number;
+  can_regenerate_side?: boolean;
+  generations: ProductShootGeneration[];
+  latest_generation?: ProductShootGeneration | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GenerateProductShootResponse = {
+  status: "success" | "partial";
+  front_image_s3_key?: string | null;
+  side_image_s3_key?: string | null;
+  fidelity_verified?: boolean;
+  mismatches?: string[];
+  notes?: string | null;
+  suggested_edit_prompt?: string | null;
+  draft?: ProductShootDraft | null;
+  generation_uid?: string | null;
+};
+
+export async function apiRegenerateProductShoot(
+  token: string,
+  draftUid: string,
+  editPrompt: string,
+  sourceGenerationUid?: string | null,
+  editView?: ProductShootView | null
+) {
+  const formData = new FormData();
+  formData.append("edit_prompt", editPrompt);
+  if (sourceGenerationUid) formData.append("source_generation_uid", sourceGenerationUid);
+  if (editView) formData.append("edit_view", editView);
+  const res = await fetch(`${API_BASE_URL}/product-shoot-drafts/${draftUid}/regenerate`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Regeneration failed");
+  return res.json() as Promise<GenerateProductShootResponse>;
+}
+
+export async function apiSaveProductShootDraft(
+  token: string,
+  draftUid: string,
+  generationUid?: string | null
+) {
+  const formData = new FormData();
+  if (generationUid) formData.append("generation_uid", generationUid);
+  const res = await fetch(`${API_BASE_URL}/product-shoot-drafts/${draftUid}/save`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Could not save this generation");
+  return res.json() as Promise<{
+    detail: string;
+    gallery_uid?: string | null;
+    saved_generation_uid: string;
+    draft: ProductShootDraft;
+  }>;
+}
+
+export async function apiDiscardProductShootDraft(token: string, draftUid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-shoot-drafts/${draftUid}/discard`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Could not discard this draft");
+  return res.json() as Promise<{ detail: string; draft: ProductShootDraft }>;
+}
+
+export async function apiGetProductShootDraft(token: string, draftUid: string) {
+  const res = await fetch(`${API_BASE_URL}/product-shoot-drafts/${draftUid}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Could not load this draft");
+  return res.json() as Promise<ProductShootDraft>;
+}
+
 export async function apiCreateCatalogueItem(
   token: string,
   payload: {
@@ -1168,6 +1295,18 @@ export type GalleryItem = {
   max_generations?: number | null;
 };
 
+export function galleryImageCaptions(
+  analysis?: Record<string, unknown> | null
+): Record<string, string> {
+  const raw = analysis?.image_captions;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key && typeof value === "string") out[key] = value;
+  }
+  return out;
+}
+
 export type GalleryListResponse = {
   items: GalleryItem[];
   page: number;
@@ -1322,6 +1461,12 @@ export type StudioShootResult = {
   sideImageS3Key?: string | null;
   sideImageUrl?: string | null;
   sideError?: string | null;
+  fidelity_verified?: boolean;
+  mismatches?: string[];
+  notes?: string | null;
+  suggested_edit_prompt?: string | null;
+  draft?: ProductShootDraft | null;
+  generation_uid?: string | null;
 };
 
 export type ApiCreateStudioShootOptions = {
@@ -1438,6 +1583,12 @@ export async function apiCreateStudioShoot(
     preview_url?: string;
     image_url?: string;
     url?: string;
+    fidelity_verified?: boolean;
+    mismatches?: string[];
+    notes?: string | null;
+    suggested_edit_prompt?: string | null;
+    draft?: ProductShootDraft | null;
+    generation_uid?: string | null;
   };
 
   const frontImageS3Key = data.front_image_s3_key || data.cleaned_image_s3_key || data.image_s3_key || data.s3_key || null;
@@ -1451,6 +1602,12 @@ export async function apiCreateStudioShoot(
     sideImageS3Key: data.side_image_s3_key ?? null,
     sideImageUrl: data.side_image_url ?? null,
     sideError: data.side_error ?? null,
+    fidelity_verified: data.fidelity_verified,
+    mismatches: data.mismatches,
+    notes: data.notes,
+    suggested_edit_prompt: data.suggested_edit_prompt,
+    draft: data.draft ?? null,
+    generation_uid: data.generation_uid ?? null,
   };
 }
 

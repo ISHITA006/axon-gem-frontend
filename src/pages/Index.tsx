@@ -174,7 +174,14 @@ export default function Index() {
                 onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}
-            {activeTab === "uploadStudioShoot" && <UploadStudioShoot />}
+            {activeTab === "uploadStudioShoot" && (
+              <UploadStudioShoot
+                onEditImage={handleEditImage}
+                onChangeColour={handleChangeColour}
+                onChangeLength={handleChangeLength}
+                onManualPhotoEdit={handleManualPhotoEdit}
+              />
+            )}
             {activeTab === "brandKit" && <BrandKit />}
             {activeTab === "productBrandKit" && <ProductBrandKit />}
             {activeTab === "editImage" && (

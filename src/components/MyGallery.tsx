@@ -9,6 +9,7 @@ import {
   apiGetGalleryItems,
   downloadMedia,
   getPresignedUrl,
+  galleryImageCaptions,
   type GalleryCategory,
   type GalleryItem,
 } from "@/lib/api";
@@ -29,6 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatTableDate } from "./catalogue/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
 import ModelShootReviewSession from "@/components/ModelShootReviewSession";
+import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
@@ -53,12 +55,14 @@ interface MyGalleryProps {
 function GalleryImageCell({
   token,
   s3Keys,
+  captions,
   rowKey,
   imageIndexByRow,
   setImageIndexByRow,
 }: {
   token: string | null;
   s3Keys: string[];
+  captions?: Record<string, string>;
   rowKey: string;
   imageIndexByRow: Record<string, number>;
   setImageIndexByRow: Dispatch<SetStateAction<Record<string, number>>>;
@@ -101,20 +105,31 @@ function GalleryImageCell({
         <ChevronLeft className="h-4 w-4 md:h-3.5 md:w-3.5" />
       </Button>
 
-      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted/30 md:h-20 md:w-20">
-        {!currentKey ? (
-          <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">—</div>
-        ) : urlQuery.isPending ? (
-          <div className="flex h-full w-full items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : urlQuery.isError || !urlQuery.data ? (
-          <div className="flex h-full w-full items-center justify-center px-0.5 text-center text-[10px] leading-tight text-destructive">
-            Error
-          </div>
-        ) : (
-          <img src={urlQuery.data} alt="" className="h-full w-full object-cover" />
-        )}
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted/30 md:h-20 md:w-20">
+          {!currentKey ? (
+            <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">—</div>
+          ) : urlQuery.isPending ? (
+            <div className="flex h-full w-full items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : urlQuery.isError || !urlQuery.data ? (
+            <div className="flex h-full w-full items-center justify-center px-0.5 text-center text-[10px] leading-tight text-destructive">
+              Error
+            </div>
+          ) : (
+            <img
+              src={urlQuery.data}
+              alt={currentKey && captions?.[currentKey] ? captions[currentKey] : ""}
+              className="h-full w-full object-cover"
+            />
+          )}
+        </div>
+        {currentKey && captions?.[currentKey] ? (
+          <p className="max-w-[5.5rem] truncate text-[10px] leading-tight text-muted-foreground md:max-w-[6.5rem]">
+            {captions[currentKey]}
+          </p>
+        ) : null}
       </div>
 
       <Button
@@ -155,7 +170,10 @@ export default function MyGallery({
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [galleryDeleting, setGalleryDeleting] = useState(false);
-  const [resumeDraftUid, setResumeDraftUid] = useState<string | null>(null);
+  const [resumeDraft, setResumeDraft] = useState<{
+    uid: string;
+    category: GalleryCategory;
+  } | null>(null);
 
   const page = pagination.pageIndex + 1;
 
@@ -285,6 +303,7 @@ export default function MyGallery({
           <GalleryImageCell
             token={token}
             s3Keys={row.original.image_s3_keys ?? []}
+            captions={galleryImageCaptions(row.original.analysis)}
             rowKey={String(row.original.uid ?? row.id)}
             imageIndexByRow={imageIndexByRow}
             setImageIndexByRow={setImageIndexByRow}
@@ -442,24 +461,41 @@ export default function MyGallery({
   const openGalleryItem = (item: GalleryItem) => {
     if (item.can_resume_review && item.draft_uid) {
       setSelectedItem(null);
-      setResumeDraftUid(item.draft_uid);
+      setResumeDraft({
+        uid: item.draft_uid,
+        category: item.category as GalleryCategory,
+      });
       return;
     }
-    setResumeDraftUid(null);
+    setResumeDraft(null);
     setSelectedItem(item);
   };
 
   const closeResume = () => {
-    setResumeDraftUid(null);
+    setResumeDraft(null);
   };
 
   const canPrev = (query.data?.page ?? 1) > 1;
   const canNext = query.data?.total_pages ? (query.data?.page ?? 1) < query.data.total_pages : false;
 
-  if (resumeDraftUid) {
+  if (resumeDraft) {
+    if (resumeDraft.category === "product-shoot") {
+      return (
+        <ProductShootReviewSession
+          draftUid={resumeDraft.uid}
+          token={token}
+          onBack={closeResume}
+          backLabel="Back to gallery"
+          onEditImage={onEditImage}
+          onChangeColour={onChangeColour}
+          onChangeLength={onChangeLength}
+          onManualPhotoEdit={onManualPhotoEdit}
+        />
+      );
+    }
     return (
       <ModelShootReviewSession
-        draftUid={resumeDraftUid}
+        draftUid={resumeDraft.uid}
         token={token}
         onBack={closeResume}
         backLabel="Back to gallery"

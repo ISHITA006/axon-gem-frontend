@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ImageIcon, Loader2, Upload } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiCreateStudioShoot,
@@ -12,12 +13,15 @@ import {
   type ProductAngleRecord,
   type ProductSideAngleRecord,
   type ProductBrandKitRecord,
+  type ProductShootDraft,
   type StudioShootResult,
   type StudioShootViews,
   type TryOnAspectRatio,
   type TryOnOutputQuality,
 } from "@/lib/api";
+import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import StudioShootResults from "@/components/StudioShootResults";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,9 +34,22 @@ import { useToast } from "@/hooks/use-toast";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
 
-export default function UploadStudioShoot() {
+type Props = {
+  onEditImage?: (s3Key: string, imageUrl: string) => void;
+  onChangeColour?: (s3Key: string, imageUrl: string) => void;
+  onChangeLength?: (s3Key: string, imageUrl: string) => void;
+  onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+};
+
+export default function UploadStudioShoot({
+  onEditImage,
+  onChangeColour,
+  onChangeLength,
+  onManualPhotoEdit,
+}: Props) {
   const { token } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [sideViewFile, setSideViewFile] = useState<File | null>(null);
   const [views, setViews] = useState<StudioShootViews | "">("");
@@ -45,6 +62,8 @@ export default function UploadStudioShoot() {
   const [shooting, setShooting] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [results, setResults] = useState<StudioShootResult | null>(null);
+  const [draft, setDraft] = useState<ProductShootDraft | null>(null);
+  const [activeGenerationUid, setActiveGenerationUid] = useState<string | null>(null);
 
   const NO_BRAND_KIT = "none";
   const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
@@ -348,6 +367,8 @@ export default function UploadStudioShoot() {
     setShooting(true);
     setShowResults(true);
     setResults(null);
+    setDraft(null);
+    setActiveGenerationUid(null);
 
     try {
       const shot = await apiCreateStudioShoot(token, imageFile, {
@@ -386,41 +407,27 @@ export default function UploadStudioShoot() {
         sideUrl = await getPresignedUrl(token, shot.sideImageS3Key);
       }
 
+      setDraft(shot.draft ?? null);
+      setActiveGenerationUid(shot.generation_uid ?? shot.draft?.latest_generation?.uid ?? null);
       setResults({
         ...shot,
         frontImageUrl: frontUrl,
         sideImageUrl: sideUrl,
       });
+      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
 
-      if (shot.status === "partial" && (shot.frontError || shot.sideError)) {
-        toast({
-          title: "Review recommended",
-          description:
-            shot.frontError && shot.sideError
-              ? "Both views are ready, but fidelity verification flagged them for review."
-              : shot.sideError && shot.frontImageS3Key
-                ? "Front view is ready. Side view is ready but flagged for review."
-                : shot.frontError && shot.sideImageS3Key
-                  ? "Side view is ready. Front view is ready but flagged for review."
-                  : shot.sideError
-                    ? "Side view is ready but flagged for review."
-                    : "Front view is ready but flagged for review.",
-          variant: "destructive",
-        });
-      } else {
-        const readyDescription =
-          views === "both"
-            ? "Front and side studio shots are ready."
-            : views === "side"
-              ? "Side studio shot is ready."
-              : "Front studio shot is ready.";
-        toast({
-          title: "Studio shoot ready",
-          description: readyDescription,
-        });
-      }
+      const autosaved = shot.draft?.latest_generation?.saved ?? false;
+      toast({
+        title: "Your look is ready",
+        description: [
+          autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
+          "Each product shoot comes with 2 complementary edits if you’d like a change.",
+        ].join(" "),
+      });
     } catch (err: unknown) {
       setResults(null);
+      setDraft(null);
+      setActiveGenerationUid(null);
       setShowResults(false);
       toast({
         title: "Studio shoot failed",
@@ -435,15 +442,39 @@ export default function UploadStudioShoot() {
   const handleBack = () => {
     setShowResults(false);
     setResults(null);
+    setDraft(null);
+    setActiveGenerationUid(null);
   };
 
   if (showResults) {
+    if (draft?.uid) {
+      return (
+        <ProductShootReviewSession
+          draftUid={draft.uid}
+          token={token}
+          onBack={handleBack}
+          initialDraft={draft}
+          initialResults={results}
+          initialGenerationUid={activeGenerationUid}
+          loading={shooting}
+          onEditImage={onEditImage}
+          onChangeColour={onChangeColour}
+          onChangeLength={onChangeLength}
+          onManualPhotoEdit={onManualPhotoEdit}
+          onDraftChange={setDraft}
+        />
+      );
+    }
     return (
       <StudioShootResults
         loading={shooting}
         results={results}
         onBack={handleBack}
         token={token}
+        onEditImage={onEditImage}
+        onChangeColour={onChangeColour}
+        onChangeLength={onChangeLength}
+        onManualPhotoEdit={onManualPhotoEdit}
       />
     );
   }
