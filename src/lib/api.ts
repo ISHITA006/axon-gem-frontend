@@ -534,13 +534,116 @@ export type TryOnAnalysis = {
   design?: unknown;
   framing?: unknown;
   style_note?: unknown;
+  placement_guided?: boolean;
+};
+
+/** One stored attempt inside a model-shoot draft (1/3, 2/3, …). */
+export type ModelShootGeneration = {
+  uid: string;
+  attempt_index: number;
+  attempt_label: string;
+  front_image_s3_key: string;
+  close_up_image_s3_key?: string | null;
+  fidelity_verified: boolean;
+  mismatches: string[];
+  notes?: string | null;
+  suggested_edit_prompt?: string | null;
+  applied_edit_prompt?: string | null;
+  /** True once this generation has been added to the shoot's gallery item. */
+  saved: boolean;
+  saved_at?: string | null;
+  created_at: string;
+};
+
+/**
+ * A model-shoot review session. Saving a generation adds it to the shoot's
+ * gallery item without closing the session, so further edits can be saved to
+ * that same item.
+ */
+export type ModelShootDraft = {
+  uid: string;
+  status: "in_review" | "discarded";
+  max_generations: number;
+  generations_used: number;
+  generations_remaining: number;
+  generations_saved: number;
+  can_regenerate: boolean;
+  analysis?: TryOnAnalysis | null;
+  gallery_uid?: string | null;
+  placement_guided: boolean;
+  generations: ModelShootGeneration[];
+  latest_generation?: ModelShootGeneration | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type GenerateTryOnResponse = {
   front_image_s3_key: string;
   close_up_image_s3_key?: string | null;
   analysis?: TryOnAnalysis | null;
+  fidelity_verified?: boolean;
+  mismatches?: string[];
+  notes?: string | null;
+  suggested_edit_prompt?: string | null;
+  draft?: ModelShootDraft | null;
+  generation_uid?: string | null;
 };
+
+export async function apiRegenerateModelShoot(
+  token: string,
+  draftUid: string,
+  editPrompt: string,
+  sourceGenerationUid?: string | null
+) {
+  const formData = new FormData();
+  formData.append("edit_prompt", editPrompt);
+  if (sourceGenerationUid) formData.append("source_generation_uid", sourceGenerationUid);
+  const res = await fetch(`${API_BASE_URL}/model-shoot-drafts/${draftUid}/regenerate`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Regeneration failed");
+  return res.json() as Promise<GenerateTryOnResponse>;
+}
+
+export async function apiSaveModelShootDraft(
+  token: string,
+  draftUid: string,
+  generationUid?: string | null
+) {
+  const formData = new FormData();
+  if (generationUid) formData.append("generation_uid", generationUid);
+  const res = await fetch(`${API_BASE_URL}/model-shoot-drafts/${draftUid}/save`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Could not save this generation");
+  return res.json() as Promise<{
+    detail: string;
+    gallery_uid?: string | null;
+    saved_generation_uid: string;
+    draft: ModelShootDraft;
+  }>;
+}
+
+export async function apiDiscardModelShootDraft(token: string, draftUid: string) {
+  const res = await fetch(`${API_BASE_URL}/model-shoot-drafts/${draftUid}/discard`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Could not discard this draft");
+  return res.json() as Promise<{ detail: string; draft: ModelShootDraft }>;
+}
+
+export async function apiGetModelShootDraft(token: string, draftUid: string) {
+  const res = await fetch(`${API_BASE_URL}/model-shoot-drafts/${draftUid}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Could not load this draft");
+  return res.json() as Promise<ModelShootDraft>;
+}
 
 export async function apiCreateCatalogueItem(
   token: string,
@@ -916,6 +1019,8 @@ export type ApiGenerateTryOnOptions = {
   closeUpPoseS3Key?: string | null;
   /** Optional clothing library item whose stored description styles the model. */
   clothingUid?: string | null;
+  /** Optional user-shaded mask (white = jewellery coverage on the model photo). */
+  placementMask?: Blob | null;
 };
 
 export async function apiGenerateTryOn(
@@ -948,8 +1053,25 @@ export async function apiGenerateTryOn(
     return uploadData.s3_key;
   };
 
+  const uploadPlacementMask = async (blob: Blob): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", new File([blob], "placement_mask.png", { type: "image/png" }));
+    const uploadRes = await fetch(`${API_BASE_URL}/upload-temp-image`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    await assertOk(uploadRes, "Failed to upload placement shade");
+    const uploadData = (await uploadRes.json()) as { s3_key?: string };
+    if (!uploadData.s3_key) {
+      throw new Error("Failed to upload placement shade");
+    }
+    return uploadData.s3_key;
+  };
+
   let jewelleryS3Key: string | null = null;
   let jewelleryS3KeyIsEphemeral = false;
+  let placementMaskS3Key: string | null = null;
 
   try {
     const existingJewellery = options?.existingJewelleryS3Key?.trim();
@@ -996,6 +1118,11 @@ export async function apiGenerateTryOn(
     if (clothingUid) {
       params.set("clothing_uid", clothingUid);
     }
+    const placementMask = options?.placementMask;
+    if (placementMask && placementMask.size > 0) {
+      placementMaskS3Key = await uploadPlacementMask(placementMask);
+      params.set("placement_mask_s3_key", placementMaskS3Key);
+    }
 
     const res = await fetch(`${API_BASE_URL}/generate-jewellery-try-on-images?${params.toString()}`, {
       method: "POST",
@@ -1009,6 +1136,9 @@ export async function apiGenerateTryOn(
     // Cleanup temporary flatlay uploads only (not caller-supplied catalogue keys).
     if (jewelleryS3Key && jewelleryS3KeyIsEphemeral) {
       await apiDeleteS3Object(token, jewelleryS3Key).catch(() => null);
+    }
+    if (placementMaskS3Key) {
+      await apiDeleteS3Object(token, placementMaskS3Key).catch(() => null);
     }
   }
 }

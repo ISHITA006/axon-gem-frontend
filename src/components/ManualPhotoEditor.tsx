@@ -60,12 +60,13 @@ const BG_PRESETS: { hex: string; label: string }[] = [
 
 const METAL_PRESETS: { hex: string; label: string }[] = [
   { hex: "#D4A13B", label: "Yellow gold" },
-  { hex: "#B76E79", label: "Rose gold" },
+  { hex: "#E79880", label: "Rose gold" },
   { hex: "#C9CCD1", label: "White gold" },
   { hex: "#C0C0C5", label: "Silver" },
   { hex: "#D5D8DC", label: "Platinum" },
+  { hex: "#41474E", label: "Gun Metal" },
   { hex: "#D9BE8C", label: "Champagne gold" },
-  { hex: "#B0653A", label: "Copper" },
+  { hex: "#BE6F57", label: "Copper" },
 ];
 
 const TOLERANCE_OPTIONS: { value: number; label: string; hint: string }[] = [
@@ -793,7 +794,7 @@ export default function ManualPhotoEditor({
                       className="h-10 w-14 cursor-pointer rounded border border-input bg-transparent"
                     />
                     <Input
-                      placeholder="#B76E79"
+                      placeholder="#E79880"
                       value={metalHex}
                       onChange={(e) => {
                         const next = normalizeHex(e.target.value);

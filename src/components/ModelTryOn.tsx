@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiListFemaleAdultModels,
@@ -6,6 +7,8 @@ import {
   apiListMaleAdultModels,
   apiListMaleChildModels,
   apiGenerateTryOn,
+  apiRegenerateModelShoot,
+  apiSaveModelShootDraft,
   apiListBrandKits,
   apiListPoses,
   apiListModelPosesForModel,
@@ -24,6 +27,8 @@ import {
   type Measurement,
   type ModelRecord,
   type ModelPoseRecord,
+  type ModelShootDraft,
+  type ModelShootGeneration,
   type CloseUpPoseRecord,
   type ClothingRecord,
   type PoseRecord,
@@ -47,10 +52,13 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Upload, ImageIcon, Check, Loader2, Plus, Trash2, Ruler } from "lucide-react";
+import { Upload, ImageIcon, Check, Loader2, Plus, Trash2, Ruler, Brush } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toBrowserDecodedImageFile } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
+import PlacementShadeCanvas, {
+  type PlacementShadeCanvasHandle,
+} from "@/components/PlacementShadeCanvas";
 
 type ModelSections = {
   femaleAdult: ModelRecord[];
@@ -123,6 +131,10 @@ const DIMENSION_PRESETS: { key: string; label: string; fields: PresetField[] }[]
   },
 ];
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Something went wrong. Please try again.";
+}
+
 let dimensionRowSeq = 0;
 function makeDimensionRow(field?: Partial<PresetField>): DimensionRow {
   dimensionRowSeq += 1;
@@ -138,6 +150,7 @@ function makeDimensionRow(field?: Partial<PresetField>): DimensionRow {
 export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColour, onChangeLength, onManualPhotoEdit }: ModelTryOnProps) {
   const { token } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const clothingFileRef = useRef<File | null>(null);
   const [clothingFile, setClothingFile] = useState<File | null>(null);
@@ -216,6 +229,10 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   const [clothingLoading, setClothingLoading] = useState(false);
   const [selectedClothingUid, setSelectedClothingUid] = useState<string | null>(null);
 
+  const [usePlacementShade, setUsePlacementShade] = useState(false);
+  const [placementHasPaint, setPlacementHasPaint] = useState(false);
+  const placementShadeRef = useRef<PlacementShadeCanvasHandle>(null);
+
   const allModels = useMemo(
     () => [
       ...modelsBySection.femaleAdult,
@@ -238,6 +255,19 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     return pose?.image_s3_key ?? null;
   }, [closeUpPoses, selectedCloseUpPoseUid]);
 
+  const placementImageUrl = useMemo(() => {
+    if (!selectedModelUid) return null;
+    if (wantModelPose) {
+      if (!selectedModelPoseUid) return null;
+      return poseRowUrls[selectedModelPoseUid] || null;
+    }
+    return modelUrls[selectedModelUid] || null;
+  }, [selectedModelUid, wantModelPose, selectedModelPoseUid, poseRowUrls, modelUrls]);
+
+  useEffect(() => {
+    setPlacementHasPaint(false);
+  }, [placementImageUrl]);
+
   const [generating, setGenerating] = useState(false);
   const [results, setResults] = useState<{
     front: string;
@@ -247,6 +277,88 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     analysis?: TryOnAnalysis | null;
   } | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [draft, setDraft] = useState<ModelShootDraft | null>(null);
+  const [activeGenerationUid, setActiveGenerationUid] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [progressLabel, setProgressLabel] = useState<string | null>(null);
+
+  const activeGeneration = useMemo(() => {
+    if (!draft) return null;
+    return draft.generations.find((gen) => gen.uid === activeGenerationUid) ?? null;
+  }, [draft, activeGenerationUid]);
+
+  /** Presign the images of one generation and show it in the results view. */
+  const showGeneration = async (generation: ModelShootGeneration, analysis?: TryOnAnalysis | null) => {
+    if (!token) return;
+    const frontUrl = await getPresignedUrl(token, generation.front_image_s3_key);
+    const closeUpKey = generation.close_up_image_s3_key ?? undefined;
+    const closeUpUrl = closeUpKey ? await getPresignedUrl(token, closeUpKey) : undefined;
+    setActiveGenerationUid(generation.uid);
+    setResults({
+      front: frontUrl,
+      ...(closeUpUrl && closeUpKey ? { closeUp: closeUpUrl, closeUpKey } : {}),
+      frontKey: generation.front_image_s3_key,
+      analysis: analysis ?? draft?.analysis ?? null,
+    });
+  };
+
+  const handleSelectGeneration = async (generationUid: string) => {
+    const generation = draft?.generations.find((gen) => gen.uid === generationUid);
+    if (!generation) return;
+    try {
+      await showGeneration(generation);
+    } catch (err) {
+      toast({ title: "Could not load generation", description: errorMessage(err), variant: "destructive" });
+    }
+  };
+
+  const handleRegenerate = async (editPrompt: string) => {
+    if (!token || !draft || !activeGenerationUid) return;
+    setRegenerating(true);
+    setProgressLabel(`${draft.generations_used + 1}/${draft.max_generations}`);
+    try {
+      const data = await apiRegenerateModelShoot(token, draft.uid, editPrompt, activeGenerationUid);
+      const nextDraft = data.draft ?? null;
+      setDraft(nextDraft);
+      const latest =
+        nextDraft?.generations.find((gen) => gen.uid === data.generation_uid) ??
+        nextDraft?.latest_generation ??
+        null;
+      if (latest) {
+        await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+      toast({
+        title: "Regenerated",
+        description: latest
+          ? `Generation ${latest.attempt_index}/${nextDraft?.max_generations ?? ""} is ready` +
+            (latest.saved ? " and saved to this model shoot." : ". It is not in the gallery yet.")
+          : "New generation is ready for review.",
+      });
+    } catch (err) {
+      toast({ title: "Regeneration failed", description: errorMessage(err), variant: "destructive" });
+    } finally {
+      setRegenerating(false);
+      setProgressLabel(null);
+    }
+  };
+
+  /** Retry path: generations are autosaved, so this only runs if that failed. */
+  const handleSaveGeneration = async () => {
+    if (!token || !draft || !activeGenerationUid) return;
+    setSavingDraft(true);
+    try {
+      const data = await apiSaveModelShootDraft(token, draft.uid, activeGenerationUid);
+      setDraft(data.draft);
+      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+      toast({ title: "Saved", description: "This generation is now in your model-shoot gallery." });
+    } catch (err) {
+      toast({ title: "Could not save", description: errorMessage(err), variant: "destructive" });
+    } finally {
+      setSavingDraft(false);
+    }
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -584,8 +696,31 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       });
       return;
     }
+    if (usePlacementShade && wantModelPose && !selectedModelPoseS3Key) {
+      toast({
+        title: "Missing pose",
+        description: "Pick a model pose before shading the jewellery placement area.",
+        variant: "destructive",
+      });
+      return;
+    }
+    let placementMask: Blob | null = null;
+    if (usePlacementShade) {
+      placementMask = (await placementShadeRef.current?.exportMaskBlob()) ?? null;
+      if (!placementMask) {
+        toast({
+          title: "Missing placement shade",
+          description: "Shade a rough placement area on the model, or turn off placement shading.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     setGenerating(true);
     setResults(null);
+    setDraft(null);
+    setActiveGenerationUid(null);
+    setProgressLabel("1/3");
     setShowResults(true);
     try {
       const data = await apiGenerateTryOn(
@@ -603,6 +738,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
           modelPoseS3Key: wantModelPose ? selectedModelPoseS3Key : null,
           closeUpPoseS3Key: generateCloseUp && wantCloseUpPose ? selectedCloseUpPoseS3Key : null,
           clothingUid: useClothing ? selectedClothingUid : null,
+          placementMask,
           ...(clothingExternalS3Key ? { existingJewelleryS3Key: clothingExternalS3Key } : {}),
         }
       );
@@ -610,24 +746,39 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       const closeUpKey = data.close_up_image_s3_key;
       const closeUpUrl =
         closeUpKey && generateCloseUp ? await getPresignedUrl(token, closeUpKey) : undefined;
+      setDraft(data.draft ?? null);
+      setActiveGenerationUid(data.generation_uid ?? data.draft?.latest_generation?.uid ?? null);
       setResults({
         front: frontUrl,
         ...(closeUpUrl && closeUpKey ? { closeUp: closeUpUrl, closeUpKey } : {}),
         frontKey: data.front_image_s3_key,
         analysis: data.analysis ?? null,
       });
-      toast({ title: "Success", description: "Try-on images generated!" });
-    } catch (err: any) {
-      toast({ title: "Generation Failed", description: err.message, variant: "destructive" });
+      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+      const autosaved = data.draft?.latest_generation?.saved ?? false;
+      toast({
+        title: "Generation 1 ready",
+        description: [
+          autosaved ? "Saved to your gallery." : "It is not in the gallery yet.",
+          data.fidelity_verified
+            ? "Fidelity check passed — refine it with an edit prompt if you want."
+            : "Review the fidelity notes and suggested edit prompt before regenerating.",
+        ].join(" "),
+      });
+    } catch (err) {
+      toast({ title: "Generation Failed", description: errorMessage(err), variant: "destructive" });
       setShowResults(false);
     } finally {
       setGenerating(false);
+      setProgressLabel(null);
     }
   };
 
   const handleBackFromResults = () => {
     setShowResults(false);
     setResults(null);
+    setDraft(null);
+    setActiveGenerationUid(null);
   };
 
   if (showResults) {
@@ -641,6 +792,14 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         onChangeColour={onChangeColour}
         onChangeLength={onChangeLength}
         onManualPhotoEdit={onManualPhotoEdit}
+        draft={draft}
+        activeGeneration={activeGeneration}
+        onSelectGeneration={handleSelectGeneration}
+        onRegenerate={handleRegenerate}
+        onSaveGeneration={handleSaveGeneration}
+        regenerating={regenerating}
+        saving={savingDraft}
+        progressLabel={progressLabel}
       />
     );
   }
@@ -1293,6 +1452,57 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         </CardContent>
       </Card>
 
+      {selectedModelUid && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Brush className="h-4 w-4" /> Shade jewellery placement (optional)
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="usePlacementShade"
+                  checked={usePlacementShade}
+                  onCheckedChange={(v) => {
+                    const next = !!v;
+                    setUsePlacementShade(next);
+                    if (!next) setPlacementHasPaint(false);
+                  }}
+                />
+                <Label htmlFor="usePlacementShade" className="text-xs">
+                  Shade placement area
+                </Label>
+              </div>
+            </div>
+          </CardHeader>
+          {usePlacementShade && (
+            <CardContent>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Paint a rough mark on the selected model
+                {wantModelPose ? " pose" : ""} for where the piece should sit and about how large it
+                should read. This is a hint only — Gemini does a realistic try-on, not a paste that
+                fills your shade. The model photo is kept as-is; clothing and background restyling
+                are skipped for this shot.
+              </p>
+              {wantModelPose && !selectedModelPoseUid ? (
+                <p className="text-sm text-muted-foreground">
+                  Pick a model pose above, then shade the jewellery area on that pose.
+                </p>
+              ) : placementImageUrl ? (
+                <PlacementShadeCanvas
+                  key={placementImageUrl}
+                  ref={placementShadeRef}
+                  imageUrl={placementImageUrl}
+                  onPaintChange={setPlacementHasPaint}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">Loading model image…</p>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       {/* Generate Button */}
       <div className="flex justify-center">
         <Button
@@ -1305,7 +1515,8 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
             (wantModelPose && !selectedModelPoseS3Key) ||
             (generateCloseUp && wantCloseUpPose && !selectedCloseUpPoseS3Key) ||
             (useBackground && !selectedBackground) ||
-            (useClothing && !selectedClothingUid)
+            (useClothing && !selectedClothingUid) ||
+            (usePlacementShade && !placementHasPaint)
           }
           className="min-w-[220px]"
         >
