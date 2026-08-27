@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Scissors, Tr
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiDeleteGalleryItem,
-  apiGetGalleryItems, 
+  apiGetGalleryItems,
   downloadMedia,
   getPresignedUrl,
   type GalleryCategory,
@@ -24,9 +24,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatTableDate } from "./catalogue/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
+import ModelShootReviewSession from "@/components/ModelShootReviewSession";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
@@ -153,6 +155,7 @@ export default function MyGallery({
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [galleryDeleting, setGalleryDeleting] = useState(false);
+  const [resumeDraftUid, setResumeDraftUid] = useState<string | null>(null);
 
   const page = pagination.pageIndex + 1;
 
@@ -291,8 +294,23 @@ export default function MyGallery({
       {
         accessorKey: "category",
         header: "Category",
-        cell: ({ row }) =>
-          GALLERY_CATEGORY_LABELS[row.original.category as GalleryCategory] ?? row.original.category,
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <div className="flex flex-col gap-1">
+              <span>
+                {GALLERY_CATEGORY_LABELS[item.category as GalleryCategory] ?? item.category}
+              </span>
+              {item.can_resume_review ? (
+                <Badge variant="secondary" className="w-fit">
+                  {item.generations_remaining === 1
+                    ? "1 edit left"
+                    : `${item.generations_remaining ?? 2} edits left`}
+                </Badge>
+              ) : null}
+            </div>
+          );
+        },
       },
       {
         accessorKey: "created_at",
@@ -421,8 +439,37 @@ export default function MyGallery({
     state: { pagination },
   });
 
+  const openGalleryItem = (item: GalleryItem) => {
+    if (item.can_resume_review && item.draft_uid) {
+      setSelectedItem(null);
+      setResumeDraftUid(item.draft_uid);
+      return;
+    }
+    setResumeDraftUid(null);
+    setSelectedItem(item);
+  };
+
+  const closeResume = () => {
+    setResumeDraftUid(null);
+  };
+
   const canPrev = (query.data?.page ?? 1) > 1;
   const canNext = query.data?.total_pages ? (query.data?.page ?? 1) < query.data.total_pages : false;
+
+  if (resumeDraftUid) {
+    return (
+      <ModelShootReviewSession
+        draftUid={resumeDraftUid}
+        token={token}
+        onBack={closeResume}
+        backLabel="Back to gallery"
+        onEditImage={onEditImage}
+        onChangeColour={onChangeColour}
+        onChangeLength={onChangeLength}
+        onManualPhotoEdit={onManualPhotoEdit}
+      />
+    );
+  }
 
   if (selectedItem) {
     return (
@@ -552,7 +599,7 @@ export default function MyGallery({
                 </TableRow>
               ) : table.getRowModel().rows.length ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelectedItem(row.original)}>
+                  <TableRow key={row.id} className="cursor-pointer" onClick={() => openGalleryItem(row.original)}>
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="px-1.5 py-1.5 align-top text-xs md:px-2 md:py-2 md:text-sm">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

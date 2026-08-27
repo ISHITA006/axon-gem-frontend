@@ -568,6 +568,7 @@ export type ModelShootDraft = {
   generations_remaining: number;
   generations_saved: number;
   can_regenerate: boolean;
+  can_resume_review?: boolean;
   analysis?: TryOnAnalysis | null;
   gallery_uid?: string | null;
   placement_guided: boolean;
@@ -1160,6 +1161,11 @@ export type GalleryItem = {
   analysis?: Record<string, unknown> | null;
   created_at: string;
   edited_at: string;
+  draft_uid?: string | null;
+  can_resume_review?: boolean;
+  generations_used?: number | null;
+  generations_remaining?: number | null;
+  max_generations?: number | null;
 };
 
 export type GalleryListResponse = {

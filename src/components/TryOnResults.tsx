@@ -7,21 +7,23 @@ import {
   Palette,
   Pencil,
   SlidersHorizontal,
-  Check,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
   Save,
-  AlertTriangle,
 } from "lucide-react";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 import { downloadImage, type ModelShootDraft, type ModelShootGeneration, type TryOnAnalysis } from "@/lib/api";
+import {
+  complementaryEditsIncluded,
+  complementaryEditsLeft,
+  editsLeftLabel,
+} from "@/lib/modelShootCopy";
 import { useToast } from "@/hooks/use-toast";
 
 interface TryOnResultsProps {
@@ -43,13 +45,15 @@ interface TryOnResultsProps {
   draft?: ModelShootDraft | null;
   activeGeneration?: ModelShootGeneration | null;
   onSelectGeneration?: (generationUid: string) => void;
-  /** Called with the (possibly user-edited) prompt when regeneration is approved. */
+  /** Called with the (possibly user-edited) prompt when an edit is applied. */
   onRegenerate?: (editPrompt: string) => void;
   onSaveGeneration?: () => void;
   regenerating?: boolean;
   saving?: boolean;
-  /** Progress label shown while a generation is running, e.g. "2/3". */
+  /** Progress label shown while an edit is running, e.g. "Edit 1 of 2". */
   progressLabel?: string | null;
+  backLabel?: string;
+  loadingTitle?: string;
 }
 
 const MISMATCH_LABELS: Record<string, string> = {
@@ -70,6 +74,14 @@ function labelForMismatch(field: string): string {
   return MISMATCH_LABELS[field] ?? field.replace(/_match$/, "").replace(/_/g, " ");
 }
 
+function joinTweaks(fields: string[]): string {
+  const labels = fields.map(labelForMismatch);
+  if (labels.length === 0) return "";
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
 export default function TryOnResults({
   loading,
   results,
@@ -87,6 +99,8 @@ export default function TryOnResults({
   regenerating = false,
   saving = false,
   progressLabel,
+  backLabel = "Back to Try On",
+  loadingTitle,
 }: TryOnResultsProps) {
   const { toast } = useToast();
   const [editPrompt, setEditPrompt] = useState("");
@@ -94,7 +108,7 @@ export default function TryOnResults({
   const activeUid = activeGeneration?.uid ?? null;
   const suggestedPrompt = activeGeneration?.suggested_edit_prompt ?? "";
 
-  // Reset the editable prompt whenever a different generation is in view.
+  // Reset the editable prompt whenever a different look is in view.
   useEffect(() => {
     setEditPrompt(suggestedPrompt);
   }, [activeUid, suggestedPrompt]);
@@ -122,7 +136,7 @@ export default function TryOnResults({
   };
 
   if (loading || regenerating) {
-    const label = progressLabel ?? (regenerating ? "Regenerating" : null);
+    const label = progressLabel ?? (regenerating ? "Applying edit" : null);
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
         <div className="relative">
@@ -131,10 +145,13 @@ export default function TryOnResults({
         </div>
         <div className="text-center space-y-2">
           <h2 className="text-xl font-semibold">
-            {regenerating ? "Applying your edit..." : "Generating your try-on images..."}
+            {loadingTitle ??
+              (regenerating ? "Applying your edit..." : "Generating your try-on images...")}
           </h2>
-          {label && <p className="text-sm font-medium text-primary">Generation {label}</p>}
-          <p className="text-sm text-muted-foreground">This may take some time. Please don't close this page.</p>
+          {label && <p className="text-sm font-medium text-primary">{label}</p>}
+          {!loadingTitle && (
+            <p className="text-sm text-muted-foreground">This may take some time. Please don't close this page.</p>
+          )}
         </div>
       </div>
     );
@@ -144,14 +161,16 @@ export default function TryOnResults({
 
   const generations = draft?.generations ?? [];
   const total = draft?.max_generations ?? 0;
+  const includedEdits = complementaryEditsIncluded(total);
+  const editsLeft = complementaryEditsLeft(draft?.generations_used ?? generations.length, total);
   const activeIndex = generations.findIndex((gen) => gen.uid === activeUid);
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex >= 0 && activeIndex < generations.length - 1;
   const mismatches = activeGeneration?.mismatches ?? [];
-  const isClean = Boolean(activeGeneration?.fidelity_verified) && mismatches.length === 0;
+  const tweakSummary = joinTweaks(mismatches);
   const canRegenerate = Boolean(draft?.can_regenerate) && Boolean(onRegenerate);
   const isSaved = Boolean(activeGeneration?.saved);
-  const savedCount = draft?.generations_saved ?? 0;
+  const showPager = generations.length > 1;
 
   const imageItems: Array<{ label: string; url: string; s3Key: string; file: string }> = [
     {
@@ -176,7 +195,7 @@ export default function TryOnResults({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Button variant="ghost" onClick={onBack} className="gap-2">
-          <ArrowLeft className="h-4 w-4" /> Back to Try On
+          <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Button>
         <AddToCataloguePanel
           token={token}
@@ -185,131 +204,36 @@ export default function TryOnResults({
         />
       </div>
 
-      {draft && activeGeneration && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                Review generation
-                <Badge variant="secondary">
-                  {activeGeneration.attempt_index}/{total}
-                </Badge>
-                {isSaved ? (
-                  <Badge className="gap-1">
-                    <Check className="h-3 w-3" /> Saved to shoot
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="gap-1">
-                    <AlertTriangle className="h-3 w-3" /> Not in gallery
-                  </Badge>
-                )}
-              </CardTitle>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base">This look</CardTitle>
+            {showPager ? (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
                   disabled={!canGoPrev}
                   onClick={() => onSelectGeneration?.(generations[activeIndex - 1].uid)}
-                  title="Previous generation"
+                  title="Previous look"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  {generations.length} of {total} used
-                  {savedCount > 0 ? ` · ${savedCount} in gallery` : ""}
+                  Look {activeIndex + 1} of {generations.length}
                 </span>
                 <Button
                   variant="outline"
                   size="icon"
                   disabled={!canGoNext}
                   onClick={() => onSelectGeneration?.(generations[activeIndex + 1].uid)}
-                  title="Next generation"
+                  title="Next look"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              {isClean ? (
-                <Badge variant="secondary" className="gap-1">
-                  <Check className="h-3 w-3" /> Fidelity check passed
-                </Badge>
-              ) : (
-                <>
-                  <Badge variant="destructive" className="gap-1">
-                    <AlertTriangle className="h-3 w-3" /> Needs review
-                  </Badge>
-                  {mismatches.map((field) => (
-                    <Badge key={field} variant="outline">
-                      {labelForMismatch(field)}
-                    </Badge>
-                  ))}
-                </>
-              )}
-            </div>
-
-            {activeGeneration.notes && (
-              <p className="text-sm text-muted-foreground">{activeGeneration.notes}</p>
-            )}
-
-            {activeGeneration.applied_edit_prompt && (
-              <div className="rounded-md border bg-muted/30 p-3">
-                <p className="text-xs font-medium text-muted-foreground">Edit applied to produce this generation</p>
-                <p className="mt-1 text-sm">{activeGeneration.applied_edit_prompt}</p>
-              </div>
-            )}
-
-            {canRegenerate ? (
-              <div className="space-y-2">
-                <Label htmlFor="edit-prompt">
-                  {suggestedPrompt ? "Suggested edit prompt — change it if you want" : "Describe the change you want"}
-                </Label>
-                <Textarea
-                  id="edit-prompt"
-                  value={editPrompt}
-                  onChange={(e) => setEditPrompt(e.target.value)}
-                  placeholder="e.g. Scale the pendant down slightly and match the metal tone to the reference."
-                  className="min-h-[104px]"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Regeneration uses this generation as the base and applies only your prompt.{" "}
-                  {draft.generations_remaining} of {total} generations left. Every generation is saved to
-                  this model shoot automatically.
-                </p>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                All {total} generations have been used and saved to this model shoot. Start a new shoot to
-                edit further.
-              </p>
-            )}
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {canRegenerate && (
-                <Button
-                  className="gap-2"
-                  disabled={!editPrompt.trim() || regenerating}
-                  onClick={() => onRegenerate?.(editPrompt.trim())}
-                >
-                  <RefreshCw className="h-4 w-4" /> Approve &amp; regenerate
-                </Button>
-              )}
-              {onSaveGeneration && !isSaved && (
-                <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Retry saving to gallery
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Generated Try-On Images</CardTitle>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent>
           <div className={`grid gap-6 ${results.closeUp && results.closeUpKey ? "md:grid-cols-2" : "md:max-w-lg"}`}>
@@ -373,6 +297,82 @@ export default function TryOnResults({
           </div>
         </CardContent>
       </Card>
+
+      {draft && activeGeneration && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">
+              {canRegenerate ? "Want a change?" : "Edits used"}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">{editsLeftLabel(editsLeft, includedEdits)}</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activeGeneration.applied_edit_prompt && (
+              <div className="rounded-md border bg-muted/30 p-3">
+                <p className="text-xs font-medium text-muted-foreground">This look used your last edit</p>
+                <p className="mt-1 text-sm">{activeGeneration.applied_edit_prompt}</p>
+              </div>
+            )}
+
+            {canRegenerate ? (
+              <div className="space-y-3">
+                {tweakSummary ? (
+                  <p className="text-sm">
+                    Suggested tweaks: {tweakSummary}.
+                    {activeGeneration.notes ? ` ${activeGeneration.notes}` : ""}
+                  </p>
+                ) : activeGeneration.notes ? (
+                  <p className="text-sm text-muted-foreground">{activeGeneration.notes}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    If you’re not happy with this look, describe a change below.
+                  </p>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="edit-prompt">
+                    {suggestedPrompt ? "Suggested edit — change it if you want" : "Describe the change you want"}
+                  </Label>
+                  <Textarea
+                    id="edit-prompt"
+                    value={editPrompt}
+                    onChange={(e) => setEditPrompt(e.target.value)}
+                    placeholder="e.g. Scale the pendant down slightly and match the metal tone to the reference."
+                    className="min-h-[104px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Applies to the look you’re viewing and saves the new version to this shoot.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    className="gap-2"
+                    disabled={!editPrompt.trim() || regenerating}
+                    onClick={() => onRegenerate?.(editPrompt.trim())}
+                  >
+                    <RefreshCw className="h-4 w-4" /> Apply this edit
+                  </Button>
+                  {onSaveGeneration && !isSaved && (
+                    <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Retry saving to gallery
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">Start a new shoot if you want another change.</p>
+                {onSaveGeneration && !isSaved && (
+                  <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Retry saving to gallery
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -7,8 +7,6 @@ import {
   apiListMaleAdultModels,
   apiListMaleChildModels,
   apiGenerateTryOn,
-  apiRegenerateModelShoot,
-  apiSaveModelShootDraft,
   apiListBrandKits,
   apiListPoses,
   apiListModelPosesForModel,
@@ -28,7 +26,6 @@ import {
   type ModelRecord,
   type ModelPoseRecord,
   type ModelShootDraft,
-  type ModelShootGeneration,
   type CloseUpPoseRecord,
   type ClothingRecord,
   type PoseRecord,
@@ -37,6 +34,7 @@ import {
   type TryOnOutputQuality,
 } from "@/lib/api";
 import TryOnResults from "@/components/TryOnResults";
+import ModelShootReviewSession from "@/components/ModelShootReviewSession";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -279,86 +277,9 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   const [showResults, setShowResults] = useState(false);
   const [draft, setDraft] = useState<ModelShootDraft | null>(null);
   const [activeGenerationUid, setActiveGenerationUid] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [savingDraft, setSavingDraft] = useState(false);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
 
-  const activeGeneration = useMemo(() => {
-    if (!draft) return null;
-    return draft.generations.find((gen) => gen.uid === activeGenerationUid) ?? null;
-  }, [draft, activeGenerationUid]);
-
-  /** Presign the images of one generation and show it in the results view. */
-  const showGeneration = async (generation: ModelShootGeneration, analysis?: TryOnAnalysis | null) => {
-    if (!token) return;
-    const frontUrl = await getPresignedUrl(token, generation.front_image_s3_key);
-    const closeUpKey = generation.close_up_image_s3_key ?? undefined;
-    const closeUpUrl = closeUpKey ? await getPresignedUrl(token, closeUpKey) : undefined;
-    setActiveGenerationUid(generation.uid);
-    setResults({
-      front: frontUrl,
-      ...(closeUpUrl && closeUpKey ? { closeUp: closeUpUrl, closeUpKey } : {}),
-      frontKey: generation.front_image_s3_key,
-      analysis: analysis ?? draft?.analysis ?? null,
-    });
-  };
-
-  const handleSelectGeneration = async (generationUid: string) => {
-    const generation = draft?.generations.find((gen) => gen.uid === generationUid);
-    if (!generation) return;
-    try {
-      await showGeneration(generation);
-    } catch (err) {
-      toast({ title: "Could not load generation", description: errorMessage(err), variant: "destructive" });
-    }
-  };
-
-  const handleRegenerate = async (editPrompt: string) => {
-    if (!token || !draft || !activeGenerationUid) return;
-    setRegenerating(true);
-    setProgressLabel(`${draft.generations_used + 1}/${draft.max_generations}`);
-    try {
-      const data = await apiRegenerateModelShoot(token, draft.uid, editPrompt, activeGenerationUid);
-      const nextDraft = data.draft ?? null;
-      setDraft(nextDraft);
-      const latest =
-        nextDraft?.generations.find((gen) => gen.uid === data.generation_uid) ??
-        nextDraft?.latest_generation ??
-        null;
-      if (latest) {
-        await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null);
-      }
-      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
-      toast({
-        title: "Regenerated",
-        description: latest
-          ? `Generation ${latest.attempt_index}/${nextDraft?.max_generations ?? ""} is ready` +
-            (latest.saved ? " and saved to this model shoot." : ". It is not in the gallery yet.")
-          : "New generation is ready for review.",
-      });
-    } catch (err) {
-      toast({ title: "Regeneration failed", description: errorMessage(err), variant: "destructive" });
-    } finally {
-      setRegenerating(false);
-      setProgressLabel(null);
-    }
-  };
-
-  /** Retry path: generations are autosaved, so this only runs if that failed. */
-  const handleSaveGeneration = async () => {
-    if (!token || !draft || !activeGenerationUid) return;
-    setSavingDraft(true);
-    try {
-      const data = await apiSaveModelShootDraft(token, draft.uid, activeGenerationUid);
-      setDraft(data.draft);
-      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
-      toast({ title: "Saved", description: "This generation is now in your model-shoot gallery." });
-    } catch (err) {
-      toast({ title: "Could not save", description: errorMessage(err), variant: "destructive" });
-    } finally {
-      setSavingDraft(false);
-    }
-  };
+  /** Presign is handled by ModelShootReviewSession once a draft exists. */
 
   useEffect(() => {
     if (!token) return;
@@ -586,6 +507,11 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       return;
     }
 
+    setShowResults(false);
+    setResults(null);
+    setDraft(null);
+    setActiveGenerationUid(null);
+
     let cancelled = false;
     setClothingFile(null);
     setClothingExternalS3Key(key);
@@ -720,7 +646,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     setResults(null);
     setDraft(null);
     setActiveGenerationUid(null);
-    setProgressLabel("1/3");
+    setProgressLabel(null);
     setShowResults(true);
     try {
       const data = await apiGenerateTryOn(
@@ -757,12 +683,10 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
       const autosaved = data.draft?.latest_generation?.saved ?? false;
       toast({
-        title: "Generation 1 ready",
+        title: "Your look is ready",
         description: [
-          autosaved ? "Saved to your gallery." : "It is not in the gallery yet.",
-          data.fidelity_verified
-            ? "Fidelity check passed — refine it with an edit prompt if you want."
-            : "Review the fidelity notes and suggested edit prompt before regenerating.",
+          autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
+          "Each model shoot comes with 2 complementary edits if you’d like a change.",
         ].join(" "),
       });
     } catch (err) {
@@ -782,23 +706,30 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   };
 
   if (showResults) {
+    if (draft?.uid) {
+      return (
+        <ModelShootReviewSession
+          draftUid={draft.uid}
+          token={token}
+          onBack={handleBackFromResults}
+          initialDraft={draft}
+          initialResults={results}
+          initialGenerationUid={activeGenerationUid}
+          loading={generating}
+          onEditImage={onEditImage}
+          onChangeColour={onChangeColour}
+          onChangeLength={onChangeLength}
+          onManualPhotoEdit={onManualPhotoEdit}
+          onDraftChange={setDraft}
+        />
+      );
+    }
     return (
       <TryOnResults
         loading={generating}
         results={results}
         onBack={handleBackFromResults}
         token={token}
-        onEditImage={onEditImage}
-        onChangeColour={onChangeColour}
-        onChangeLength={onChangeLength}
-        onManualPhotoEdit={onManualPhotoEdit}
-        draft={draft}
-        activeGeneration={activeGeneration}
-        onSelectGeneration={handleSelectGeneration}
-        onRegenerate={handleRegenerate}
-        onSaveGeneration={handleSaveGeneration}
-        regenerating={regenerating}
-        saving={savingDraft}
         progressLabel={progressLabel}
       />
     );

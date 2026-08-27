@@ -34,6 +34,7 @@ function makeDraft(generations: ModelShootGeneration[], overrides: Partial<Model
     generations_remaining: 3 - generations.length,
     generations_saved: generations.filter((gen) => gen.saved).length,
     can_regenerate: generations.length < 3,
+    can_resume_review: generations.length < 3,
     analysis: null,
     gallery_uid: null,
     placement_guided: false,
@@ -54,7 +55,7 @@ const results = {
 beforeEach(cleanup);
 
 describe("model shoot review flow", () => {
-  it("shows the generation counter, mismatches and the editable suggested prompt", () => {
+  it("explains complementary edits and offers a suggested tweak without a warning", () => {
     const generation = makeGeneration();
     render(
       <TryOnResults
@@ -69,15 +70,15 @@ describe("model shoot review flow", () => {
       />
     );
 
-    expect(screen.getByText("1/3")).toBeInTheDocument();
-    expect(screen.getByText("1 of 3 used")).toBeInTheDocument();
-    expect(screen.getByText("Needs review")).toBeInTheDocument();
-    expect(screen.getByText("stone count")).toBeInTheDocument();
+    expect(screen.getByText("Want a change?")).toBeInTheDocument();
+    expect(screen.getByText(/Each model shoot comes with 2 complementary edits/)).toBeInTheDocument();
+    expect(screen.queryByText("Needs review")).not.toBeInTheDocument();
+    expect(screen.getByText(/Suggested tweaks: stone count/)).toBeInTheDocument();
     expect(screen.getByText(/Generated piece has 10 stones/)).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toHaveValue("Increase the stone count to 12.");
   });
 
-  it("sends the user's edited prompt when regeneration is approved", () => {
+  it("sends the user's edited prompt when an edit is applied", () => {
     const onRegenerate = vi.fn();
     const generation = makeGeneration();
     render(
@@ -96,12 +97,12 @@ describe("model shoot review flow", () => {
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "Increase the stone count to 12 and warm the lighting." },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Approve & regenerate/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
 
     expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12 and warm the lighting.");
   });
 
-  it("blocks regeneration with an empty prompt", () => {
+  it("blocks applying an edit with an empty prompt", () => {
     const onRegenerate = vi.fn();
     const generation = makeGeneration({ suggested_edit_prompt: null, mismatches: [], fidelity_verified: true });
     render(
@@ -117,14 +118,15 @@ describe("model shoot review flow", () => {
       />
     );
 
-    expect(screen.getByText("Fidelity check passed")).toBeInTheDocument();
-    const button = screen.getByRole("button", { name: /Approve & regenerate/i });
+    expect(screen.queryByText("Fidelity check passed")).not.toBeInTheDocument();
+    expect(screen.getByText(/not happy with this look/)).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: /Apply this edit/i });
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(onRegenerate).not.toHaveBeenCalled();
   });
 
-  it("pages between stored generations", () => {
+  it("pages between stored looks", () => {
     const onSelectGeneration = vi.fn();
     const first = makeGeneration();
     const second = makeGeneration({
@@ -147,14 +149,14 @@ describe("model shoot review flow", () => {
       />
     );
 
-    expect(screen.getByText("2/3")).toBeInTheDocument();
-    expect(screen.getByText(/Edit applied to produce this generation/)).toBeInTheDocument();
-    expect(screen.getByTitle("Next generation")).toBeDisabled();
-    fireEvent.click(screen.getByTitle("Previous generation"));
+    expect(screen.getByText("Look 2 of 2")).toBeInTheDocument();
+    expect(screen.getByText(/This look used your last edit/)).toBeInTheDocument();
+    expect(screen.getByTitle("Next look")).toBeDisabled();
+    fireEvent.click(screen.getByTitle("Previous look"));
     expect(onSelectGeneration).toHaveBeenCalledWith("gen-1");
   });
 
-  it("stops offering regeneration once all generations are used", () => {
+  it("stops offering edits once both complementary edits are used", () => {
     const generations = [1, 2, 3].map((i) =>
       makeGeneration({
         uid: `gen-${i}`,
@@ -177,14 +179,13 @@ describe("model shoot review flow", () => {
       />
     );
 
-    expect(screen.queryByRole("button", { name: /Approve & regenerate/i })).toBeNull();
-    expect(
-      screen.getByText(/All 3 generations have been used and saved to this model shoot/)
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Apply this edit/i })).toBeNull();
+    expect(screen.getByText(/Both complementary edits on this shoot have been used/)).toBeInTheDocument();
+    expect(screen.getByText(/Start a new shoot if you want another change/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Retry saving to gallery/i })).toBeNull();
   });
 
-  it("reports an autosaved generation and keeps editing available", () => {
+  it("keeps complementary edits available after an autosave", () => {
     const onRegenerate = vi.fn();
     const saved = makeGeneration({ saved: true, saved_at: new Date().toISOString() });
     render(
@@ -200,17 +201,14 @@ describe("model shoot review flow", () => {
       />
     );
 
-    expect(screen.getByText("Saved to shoot")).toBeInTheDocument();
-    expect(screen.getByText("1 of 3 used · 1 in gallery")).toBeInTheDocument();
-    expect(screen.getByText(/saved to this model shoot automatically/i)).toBeInTheDocument();
-    // Autosaved generations need no save button at all.
+    expect(screen.getByText(/Each model shoot comes with 2 complementary edits/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /saving to gallery/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Approve & regenerate/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
     expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.");
   });
 
-  it("offers a retry when a generation was not autosaved", () => {
+  it("offers a retry when a look was not autosaved", () => {
     const onSaveGeneration = vi.fn();
     const first = makeGeneration({ saved: true, saved_at: new Date().toISOString() });
     const second = makeGeneration({ uid: "gen-2", attempt_index: 2, attempt_label: "2/3" });
@@ -227,14 +225,13 @@ describe("model shoot review flow", () => {
       />
     );
 
-    expect(screen.getByText("Not in gallery")).toBeInTheDocument();
     const retryButton = screen.getByRole("button", { name: /Retry saving to gallery/i });
     expect(retryButton).toBeEnabled();
     fireEvent.click(retryButton);
     expect(onSaveGeneration).toHaveBeenCalled();
   });
 
-  it("shows the generation progress label while regenerating", () => {
+  it("shows the complementary-edit progress label while applying", () => {
     const generation = makeGeneration();
     render(
       <TryOnResults
@@ -245,11 +242,31 @@ describe("model shoot review flow", () => {
         draft={makeDraft([generation])}
         activeGeneration={generation}
         regenerating
-        progressLabel="2/3"
+        progressLabel="Edit 1 of 2"
       />
     );
 
     expect(screen.getByText("Applying your edit...")).toBeInTheDocument();
-    expect(screen.getByText("Generation 2/3")).toBeInTheDocument();
+    expect(screen.getByText("Edit 1 of 2")).toBeInTheDocument();
+  });
+
+  it("uses a gallery back label when resuming from My Gallery", () => {
+    const generation = makeGeneration();
+    render(
+      <TryOnResults
+        loading={false}
+        results={results}
+        onBack={() => {}}
+        backLabel="Back to gallery"
+        token="t"
+        draft={makeDraft([generation], { gallery_uid: "gallery-1" })}
+        activeGeneration={generation}
+        onRegenerate={() => {}}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /Back to gallery/i })).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("Increase the stone count to 12.");
+    expect(screen.getByRole("button", { name: /Apply this edit/i })).toBeEnabled();
   });
 });
