@@ -15,6 +15,11 @@ import {
   type ModelShootViews,
   type TryOnAnalysis,
 } from "@/lib/api";
+import {
+  ensureGenerationNotifyPermission,
+  notifyGenerationError,
+  notifyGenerationSuccess,
+} from "@/lib/generationNotify";
 import { applyViewEditProgressLabel, modelShootTracksCloseUp, modelShootTracksFront, modelShootViewBudget, resolveModelShootViews } from "@/lib/modelShootCopy";
 
 export type ReviewResults = {
@@ -175,6 +180,7 @@ export default function ModelShootReviewSession({
   ) => {
     if (!token || !draft || !activeGenerationUid) return;
     setRegenerating(true);
+    void ensureGenerationNotifyPermission();
     const viewLabel = editView === "front" ? "Regular view" : "Close-up view";
     const budget = modelShootViewBudget(draft);
     setProgressLabel(
@@ -199,21 +205,25 @@ export default function ModelShootReviewSession({
         nextDraft?.generations.find((gen) => gen.uid === data.generation_uid) ??
         nextDraft?.latest_generation ??
         null;
-      if (latest) {
-        await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null, nextDraft?.views);
+      const produced =
+        editView === "front" ? Boolean(latest?.front_image_s3_key) : Boolean(latest?.close_up_image_s3_key);
+      if (!latest || !produced) {
+        throw new Error(`${viewLabel} was not produced. Please try again.`);
       }
+      await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null, nextDraft?.views);
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
       const viewName = editView === "front" ? "regular view" : "close-up view";
-      toast({
-        title: `${viewLabel} updated`,
-        description: latest
-          ? latest.saved
-            ? `The new ${viewName} is ready and saved to this shoot.`
-            : `The new ${viewName} is ready. It is not in the gallery yet.`
-          : "Your new look is ready.",
-      });
+      const readyTitle = `${viewLabel} updated`;
+      const readyBody = latest.saved
+        ? `The new ${viewName} is ready and saved to this shoot.`
+        : `The new ${viewName} is ready. It is not in the gallery yet.`;
+      toast({ title: readyTitle, description: readyBody });
+      notifyGenerationSuccess(readyTitle, readyBody);
     } catch (err) {
-      toast({ title: "Could not apply this edit", description: errorMessage(err), variant: "destructive" });
+      const failTitle = "Could not apply this edit";
+      const failBody = errorMessage(err);
+      toast({ title: failTitle, description: failBody, variant: "destructive" });
+      notifyGenerationError(failTitle, failBody);
     } finally {
       setRegenerating(false);
       setProgressLabel(null);

@@ -31,6 +31,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import {
+  ensureGenerationNotifyPermission,
+  notifyGenerationError,
+  notifyGenerationSuccess,
+} from "@/lib/generationNotify";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
 
@@ -361,6 +366,7 @@ export default function UploadStudioShoot({
     }
 
     setShooting(true);
+    void ensureGenerationNotifyPermission();
     setShowResults(true);
     setResults(null);
     setDraft(null);
@@ -413,23 +419,31 @@ export default function UploadStudioShoot({
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
 
       const autosaved = shot.draft?.latest_generation?.saved ?? false;
-      toast({
-        title: "Your look is ready",
-        description: [
-          autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
-          "Each product shoot comes with 2 complementary edits if you’d like a change.",
-        ].join(" "),
-      });
+      const readyTitle = "Your look is ready";
+      const readyBody = [
+        autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
+        "Each product shoot comes with 2 complementary edits if you’d like a change.",
+      ].join(" ");
+      toast({ title: readyTitle, description: readyBody });
+      notifyGenerationSuccess(readyTitle, readyBody);
+      if (shot.sideError) {
+        const sideTitle = "Side view failed";
+        toast({ title: sideTitle, description: shot.sideError, variant: "destructive" });
+        notifyGenerationError(sideTitle, shot.sideError);
+      }
     } catch (err: unknown) {
       setResults(null);
       setDraft(null);
       setActiveGenerationUid(null);
       setShowResults(false);
+      const failTitle = "Studio shoot failed";
+      const failBody = err instanceof Error ? err.message : "Could not create studio shoot";
       toast({
-        title: "Studio shoot failed",
-        description: err instanceof Error ? err.message : "Could not create studio shoot",
+        title: failTitle,
+        description: failBody,
         variant: "destructive",
       });
+      notifyGenerationError(failTitle, failBody);
     } finally {
       setShooting(false);
     }

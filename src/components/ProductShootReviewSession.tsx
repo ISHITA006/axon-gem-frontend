@@ -13,6 +13,11 @@ import {
   type ProductShootGeneration,
   type StudioShootResult,
 } from "@/lib/api";
+import {
+  ensureGenerationNotifyPermission,
+  notifyGenerationError,
+  notifyGenerationSuccess,
+} from "@/lib/generationNotify";
 import { applyViewEditProgressLabel, productShootViewBudget } from "@/lib/modelShootCopy";
 
 type Props = {
@@ -173,6 +178,7 @@ export default function ProductShootReviewSession({
   ) => {
     if (!token || !draft || !activeGenerationUid) return;
     setRegenerating(true);
+    void ensureGenerationNotifyPermission();
     const viewLabel = editView === "front" ? "Front view" : "Side view";
     const budget = productShootViewBudget(draft);
     setProgressLabel(
@@ -197,20 +203,24 @@ export default function ProductShootReviewSession({
         nextDraft?.generations.find((gen) => gen.uid === data.generation_uid) ??
         nextDraft?.latest_generation ??
         null;
-      if (latest) {
-        await showGeneration(latest);
+      const produced =
+        editView === "front" ? Boolean(latest?.front_image_s3_key) : Boolean(latest?.side_image_s3_key);
+      if (!latest || !produced) {
+        throw new Error(`${viewLabel} was not produced. Please try again.`);
       }
+      await showGeneration(latest);
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
-      toast({
-        title: `${viewLabel} updated`,
-        description: latest
-          ? latest.saved
-            ? `The new ${editView} view is ready and saved to this shoot.`
-            : `The new ${editView} view is ready. It is not in the gallery yet.`
-          : "Your new look is ready.",
-      });
+      const readyTitle = `${viewLabel} updated`;
+      const readyBody = latest.saved
+        ? `The new ${editView} view is ready and saved to this shoot.`
+        : `The new ${editView} view is ready. It is not in the gallery yet.`;
+      toast({ title: readyTitle, description: readyBody });
+      notifyGenerationSuccess(readyTitle, readyBody);
     } catch (err) {
-      toast({ title: "Could not apply this edit", description: errorMessage(err), variant: "destructive" });
+      const failTitle = "Could not apply this edit";
+      const failBody = errorMessage(err);
+      toast({ title: failTitle, description: failBody, variant: "destructive" });
+      notifyGenerationError(failTitle, failBody);
     } finally {
       setRegenerating(false);
       setProgressLabel(null);

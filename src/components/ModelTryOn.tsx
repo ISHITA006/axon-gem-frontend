@@ -54,6 +54,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Upload, ImageIcon, Check, Loader2, Plus, Trash2, Ruler, Brush } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  ensureGenerationNotifyPermission,
+  notifyGenerationError,
+  notifyGenerationSuccess,
+} from "@/lib/generationNotify";
 import { toBrowserDecodedImageFile } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
 import PlacementShadeCanvas, {
@@ -694,6 +699,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
       }
     }
     setGenerating(true);
+    void ensureGenerationNotifyPermission();
     setResults(null);
     setDraft(null);
     setActiveGenerationUid(null);
@@ -741,17 +747,20 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
       });
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
       const autosaved = data.draft?.latest_generation?.saved ?? false;
-      toast({
-        title: "Your look is ready",
-        description: [
-          autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
-          views === "both"
-            ? "Each view comes with 2 complementary edits if you’d like a change."
-            : "Each model shoot comes with 2 complementary edits if you’d like a change.",
-        ].join(" "),
-      });
+      const readyTitle = "Your look is ready";
+      const readyBody = [
+        autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
+        views === "both"
+          ? "Each view comes with 2 complementary edits if you’d like a change."
+          : "Each model shoot comes with 2 complementary edits if you’d like a change.",
+      ].join(" ");
+      toast({ title: readyTitle, description: readyBody });
+      notifyGenerationSuccess(readyTitle, readyBody);
     } catch (err) {
-      toast({ title: "Generation Failed", description: errorMessage(err), variant: "destructive" });
+      const failTitle = "Generation Failed";
+      const failBody = errorMessage(err);
+      toast({ title: failTitle, description: failBody, variant: "destructive" });
+      notifyGenerationError(failTitle, failBody);
       setShowResults(false);
     } finally {
       setGenerating(false);

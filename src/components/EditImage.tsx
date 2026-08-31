@@ -7,6 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import {
+  ensureGenerationNotifyPermission,
+  notifyGenerationError,
+  notifyGenerationSuccess,
+} from "@/lib/generationNotify";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
@@ -186,6 +191,7 @@ export default function EditImage({
 
     clearResult();
     setSubmitting(true);
+    void ensureGenerationNotifyPermission();
     try {
       const data = await apiEditImageWithInstructions(token, {
         editInstructions: trimmed,
@@ -199,13 +205,19 @@ export default function EditImage({
       setResultUrl(nextUrl);
       setResultS3Key(data.editedImageS3Key ?? null);
       setResultIsObjectUrl(Boolean(data.objectUrl));
-      toast({ title: "Image edited", description: "Your edited image is shown below." });
+      const readyTitle = "Image edited";
+      const readyBody = "Your edited image is shown below.";
+      toast({ title: readyTitle, description: readyBody });
+      notifyGenerationSuccess(readyTitle, readyBody);
     } catch (err: unknown) {
+      const failTitle = "Edit failed";
+      const failBody = err instanceof Error ? err.message : "Could not edit image";
       toast({
-        title: "Edit failed",
-        description: err instanceof Error ? err.message : "Could not edit image",
+        title: failTitle,
+        description: failBody,
         variant: "destructive",
       });
+      notifyGenerationError(failTitle, failBody);
     } finally {
       setSubmitting(false);
     }
