@@ -8,6 +8,7 @@ import {
   apiRegenerateProductShoot,
   apiSaveProductShootDraft,
   getPresignedUrl,
+  type JewelleryReferenceChange,
   type ProductShootDraft,
   type ProductShootGeneration,
   type StudioShootResult,
@@ -165,7 +166,11 @@ export default function ProductShootReviewSession({
     }
   };
 
-  const handleRegenerate = async (editPrompt: string, editView: "front" | "side") => {
+  const handleRegenerate = async (
+    editPrompt: string,
+    editView: "front" | "side",
+    jewelleryReference?: JewelleryReferenceChange
+  ) => {
     if (!token || !draft || !activeGenerationUid) return;
     setRegenerating(true);
     const viewLabel = editView === "front" ? "Front view" : "Side view";
@@ -176,13 +181,16 @@ export default function ProductShootReviewSession({
       )}`
     );
     try {
-      const data = await apiRegenerateProductShoot(
-        token,
-        draft.uid,
-        editPrompt,
-        activeGenerationUid,
-        editView
-      );
+      const data = jewelleryReference
+        ? await apiRegenerateProductShoot(
+            token,
+            draft.uid,
+            editPrompt,
+            activeGenerationUid,
+            editView,
+            jewelleryReference
+          )
+        : await apiRegenerateProductShoot(token, draft.uid, editPrompt, activeGenerationUid, editView);
       const nextDraft = data.draft ?? null;
       if (nextDraft) applyDraft(nextDraft);
       const latest =

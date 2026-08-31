@@ -16,9 +16,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import { JewelleryReferencePicker, type JewelleryReferencePickerValue } from "@/components/JewelleryReferencePicker";
 import {
   apiGetNextStudioShootCode,
   downloadImage,
+  type JewelleryReferenceChange,
   type ProductShootDraft,
   type ProductShootGeneration,
   type ProductShootView,
@@ -41,7 +43,11 @@ interface StudioShootResultsProps {
   draft?: ProductShootDraft | null;
   activeGeneration?: ProductShootGeneration | null;
   onSelectGeneration?: (generationUid: string) => void;
-  onRegenerate?: (editPrompt: string, editView: ProductShootView) => void;
+  onRegenerate?: (
+    editPrompt: string,
+    editView: ProductShootView,
+    jewelleryReference?: JewelleryReferenceChange
+  ) => void;
   onSaveGeneration?: () => void;
   regenerating?: boolean;
   saving?: boolean;
@@ -121,7 +127,7 @@ function ViewEditPanel({
   applied: string | null;
   prompt: string;
   onPromptChange: (value: string) => void;
-  onApply: () => void;
+  onApply: (jewelleryReference?: JewelleryReferenceChange) => void;
   regenerating: boolean;
   bothViews: boolean;
   canApply: boolean;
@@ -135,6 +141,23 @@ function ViewEditPanel({
       : "Apply side edit"
     : "Apply this edit";
   const viewName = `${view} view`;
+  const [jewelleryReference, setJewelleryReference] = useState<JewelleryReferencePickerValue>({
+    mode: "keep",
+    file: null,
+  });
+  const needsReferenceFile = jewelleryReference.mode !== "keep";
+  const canSubmit =
+    Boolean(prompt.trim()) && (!needsReferenceFile || Boolean(jewelleryReference.file)) && !regenerating;
+
+  const handleApply = () => {
+    if (!canSubmit) return;
+    const change: JewelleryReferenceChange | undefined =
+      jewelleryReference.mode !== "keep" && jewelleryReference.file
+        ? { mode: jewelleryReference.mode, file: jewelleryReference.file }
+        : undefined;
+    onApply(change);
+  };
+
   return (
     <div className="space-y-3">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
@@ -188,7 +211,12 @@ function ViewEditPanel({
                   : ""}
             </p>
           </div>
-          <Button className="gap-2" disabled={!prompt.trim() || regenerating} onClick={onApply}>
+          <JewelleryReferencePicker
+            id={`product-jewellery-ref-${view}`}
+            value={jewelleryReference}
+            onChange={setJewelleryReference}
+          />
+          <Button className="gap-2" disabled={!canSubmit} onClick={handleApply}>
             <RefreshCw className="h-4 w-4" /> {applyLabel}
           </Button>
         </>
@@ -444,6 +472,7 @@ export default function StudioShootResults({
               <div className={bothViews ? "grid gap-6 md:grid-cols-2" : "space-y-3"}>
                 {hasFront ? (
                   <ViewEditPanel
+                    key={`${activeUid}-front`}
                     view="front"
                     label={bothViews ? "Front view" : undefined}
                     suggested={frontEdit.suggested}
@@ -452,7 +481,11 @@ export default function StudioShootResults({
                     applied={frontEdit.applied}
                     prompt={frontPrompt}
                     onPromptChange={setFrontPrompt}
-                    onApply={() => onRegenerate?.(frontPrompt.trim(), "front")}
+                    onApply={(jewelleryReference) =>
+                      jewelleryReference
+                        ? onRegenerate?.(frontPrompt.trim(), "front", jewelleryReference)
+                        : onRegenerate?.(frontPrompt.trim(), "front")
+                    }
                     regenerating={regenerating}
                     bothViews={bothViews}
                     canApply={budget.canRegenerateFront}
@@ -461,6 +494,7 @@ export default function StudioShootResults({
                 ) : null}
                 {hasSide ? (
                   <ViewEditPanel
+                    key={`${activeUid}-side`}
                     view="side"
                     label={bothViews ? "Side view" : undefined}
                     suggested={sideEdit.suggested}
@@ -469,7 +503,11 @@ export default function StudioShootResults({
                     applied={sideEdit.applied}
                     prompt={sidePrompt}
                     onPromptChange={setSidePrompt}
-                    onApply={() => onRegenerate?.(sidePrompt.trim(), "side")}
+                    onApply={(jewelleryReference) =>
+                      jewelleryReference
+                        ? onRegenerate?.(sidePrompt.trim(), "side", jewelleryReference)
+                        : onRegenerate?.(sidePrompt.trim(), "side")
+                    }
                     regenerating={regenerating}
                     bothViews={bothViews}
                     canApply={budget.canRegenerateSide}
@@ -503,7 +541,7 @@ export default function StudioShootResults({
                     )}
                   </div>
                 ) : null}
-                <p className="text-sm text-muted-foreground">Start a new shoot if you want another change.</p>
+                <p className="text-sm text-muted-foreground">Start a new edit session if you want another change.</p>
                 {onSaveGeneration && !isSaved && (
                   <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

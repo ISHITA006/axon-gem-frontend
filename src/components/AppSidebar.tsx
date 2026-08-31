@@ -19,7 +19,7 @@ import {
   Shirt,
   BarChart3,
   Settings,
-  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   Sidebar,
@@ -166,7 +166,7 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
                     <SidebarMenuButton isActive={settingsTabActive} tooltip="Settings">
                       <Settings className="h-4 w-4" />
                       <span>Settings</span>
-                      <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/settings:rotate-180" />
+                      <ChevronUp className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/settings:rotate-180" />
                     </SidebarMenuButton>
                   </CollapsibleTrigger>
                   <CollapsibleContent>

@@ -16,8 +16,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
+import { JewelleryReferencePicker, type JewelleryReferencePickerValue } from "@/components/JewelleryReferencePicker";
 import {
   downloadImage,
+  type JewelleryReferenceChange,
   type ModelShootDraft,
   type ModelShootGeneration,
   type ModelShootView,
@@ -49,7 +51,11 @@ interface TryOnResultsProps {
   activeGeneration?: ModelShootGeneration | null;
   onSelectGeneration?: (generationUid: string) => void;
   /** Called with the (possibly user-edited) prompt when an edit is applied to one view. */
-  onRegenerate?: (editPrompt: string, editView: ModelShootView) => void;
+  onRegenerate?: (
+    editPrompt: string,
+    editView: ModelShootView,
+    jewelleryReference?: JewelleryReferenceChange
+  ) => void;
   onSaveGeneration?: () => void;
   regenerating?: boolean;
   saving?: boolean;
@@ -135,7 +141,7 @@ function ViewEditPanel({
   applied: string | null;
   prompt: string;
   onPromptChange: (value: string) => void;
-  onApply: () => void;
+  onApply: (jewelleryReference?: JewelleryReferenceChange) => void;
   regenerating: boolean;
   bothViews: boolean;
   canApply: boolean;
@@ -149,6 +155,23 @@ function ViewEditPanel({
       : "Apply close-up edit"
     : "Apply this edit";
   const name = viewLabel(view);
+  const [jewelleryReference, setJewelleryReference] = useState<JewelleryReferencePickerValue>({
+    mode: "keep",
+    file: null,
+  });
+  const needsReferenceFile = jewelleryReference.mode !== "keep";
+  const canSubmit =
+    Boolean(prompt.trim()) && (!needsReferenceFile || Boolean(jewelleryReference.file)) && !regenerating;
+
+  const handleApply = () => {
+    if (!canSubmit) return;
+    const change: JewelleryReferenceChange | undefined =
+      jewelleryReference.mode !== "keep" && jewelleryReference.file
+        ? { mode: jewelleryReference.mode, file: jewelleryReference.file }
+        : undefined;
+    onApply(change);
+  };
+
   return (
     <div className="space-y-3">
       {label ? <p className="text-sm font-medium">{label}</p> : null}
@@ -200,7 +223,12 @@ function ViewEditPanel({
                   : ""}
             </p>
           </div>
-          <Button className="gap-2" disabled={!prompt.trim() || regenerating} onClick={onApply}>
+          <JewelleryReferencePicker
+            id={`model-jewellery-ref-${view}`}
+            value={jewelleryReference}
+            onChange={setJewelleryReference}
+          />
+          <Button className="gap-2" disabled={!canSubmit} onClick={handleApply}>
             <RefreshCw className="h-4 w-4" /> {applyLabel}
           </Button>
         </>
@@ -429,6 +457,7 @@ export default function TryOnResults({
               <div className={bothViews ? "grid gap-6 md:grid-cols-2" : "space-y-3"}>
                 {hasFront ? (
                   <ViewEditPanel
+                    key={`${activeUid}-front`}
                     view="front"
                     label={bothViews ? "Regular view" : undefined}
                     suggested={frontEdit.suggested}
@@ -437,7 +466,11 @@ export default function TryOnResults({
                     applied={frontEdit.applied}
                     prompt={frontPrompt}
                     onPromptChange={setFrontPrompt}
-                    onApply={() => onRegenerate?.(frontPrompt.trim(), "front")}
+                    onApply={(jewelleryReference) =>
+                      jewelleryReference
+                        ? onRegenerate?.(frontPrompt.trim(), "front", jewelleryReference)
+                        : onRegenerate?.(frontPrompt.trim(), "front")
+                    }
                     regenerating={regenerating}
                     bothViews={bothViews}
                     canApply={budget.canRegenerateFront}
@@ -446,6 +479,7 @@ export default function TryOnResults({
                 ) : null}
                 {hasCloseUp ? (
                   <ViewEditPanel
+                    key={`${activeUid}-close_up`}
                     view="close_up"
                     label={bothViews ? "Close-up view" : undefined}
                     suggested={closeUpEdit.suggested}
@@ -454,7 +488,11 @@ export default function TryOnResults({
                     applied={closeUpEdit.applied}
                     prompt={closeUpPrompt}
                     onPromptChange={setCloseUpPrompt}
-                    onApply={() => onRegenerate?.(closeUpPrompt.trim(), "close_up")}
+                    onApply={(jewelleryReference) =>
+                      jewelleryReference
+                        ? onRegenerate?.(closeUpPrompt.trim(), "close_up", jewelleryReference)
+                        : onRegenerate?.(closeUpPrompt.trim(), "close_up")
+                    }
                     regenerating={regenerating}
                     bothViews={bothViews}
                     canApply={budget.canRegenerateCloseUp}
@@ -490,7 +528,7 @@ export default function TryOnResults({
                     )}
                   </div>
                 ) : null}
-                <p className="text-sm text-muted-foreground">Start a new shoot if you want another change.</p>
+                <p className="text-sm text-muted-foreground">Start a new edit session if you want another change.</p>
                 {onSaveGeneration && !isSaved && (
                   <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

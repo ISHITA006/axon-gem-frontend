@@ -609,17 +609,40 @@ export type GenerateTryOnResponse = {
   generation_uid?: string | null;
 };
 
+export type JewelleryReferenceMode = "keep" | "swap" | "extra";
+
+/** Optional jewellery reference change sent with a complementary edit. */
+export type JewelleryReferenceChange = {
+  mode: "swap" | "extra";
+  file: File;
+};
+
+function appendJewelleryReference(
+  formData: FormData,
+  jewelleryReference?: JewelleryReferenceChange | null
+) {
+  if (!jewelleryReference?.file) return;
+  formData.append("jewellery_reference_mode", jewelleryReference.mode);
+  if (jewelleryReference.mode === "swap") {
+    formData.append("jewellery_file", jewelleryReference.file);
+  } else {
+    formData.append("extra_reference_file", jewelleryReference.file);
+  }
+}
+
 export async function apiRegenerateModelShoot(
   token: string,
   draftUid: string,
   editPrompt: string,
   sourceGenerationUid?: string | null,
-  editView?: ModelShootView | null
+  editView?: ModelShootView | null,
+  jewelleryReference?: JewelleryReferenceChange | null
 ) {
   const formData = new FormData();
   formData.append("edit_prompt", editPrompt);
   if (sourceGenerationUid) formData.append("source_generation_uid", sourceGenerationUid);
   if (editView) formData.append("edit_view", editView);
+  appendJewelleryReference(formData, jewelleryReference);
   const res = await fetch(`${API_BASE_URL}/model-shoot-drafts/${draftUid}/regenerate`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -741,12 +764,14 @@ export async function apiRegenerateProductShoot(
   draftUid: string,
   editPrompt: string,
   sourceGenerationUid?: string | null,
-  editView?: ProductShootView | null
+  editView?: ProductShootView | null,
+  jewelleryReference?: JewelleryReferenceChange | null
 ) {
   const formData = new FormData();
   formData.append("edit_prompt", editPrompt);
   if (sourceGenerationUid) formData.append("source_generation_uid", sourceGenerationUid);
   if (editView) formData.append("edit_view", editView);
+  appendJewelleryReference(formData, jewelleryReference);
   const res = await fetch(`${API_BASE_URL}/product-shoot-drafts/${draftUid}/regenerate`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },

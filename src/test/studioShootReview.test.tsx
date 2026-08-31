@@ -192,7 +192,7 @@ describe("product shoot review flow", () => {
 
     expect(screen.queryByRole("button", { name: /Apply this edit/i })).toBeNull();
     expect(screen.getByText(/Both complementary edits on this shoot have been used/)).toBeInTheDocument();
-    expect(screen.getByText(/Start a new shoot if you want another change/)).toBeInTheDocument();
+    expect(screen.getByText(/Start a new edit session if you want another change/)).toBeInTheDocument();
   });
 
   it("keeps complementary edits available after an autosave", () => {
@@ -355,5 +355,37 @@ describe("product shoot review flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Apply front edit/i }));
     expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.", "front");
+  });
+
+  it("sends a swapped jewellery reference with the edit", () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:preview"),
+      revokeObjectURL: vi.fn(),
+    });
+    const onRegenerate = vi.fn();
+    const generation = makeGeneration();
+    render(
+      <StudioShootResults
+        loading={false}
+        results={results}
+        onBack={() => {}}
+        token="t"
+        draft={makeDraft([generation])}
+        activeGeneration={generation}
+        onRegenerate={onRegenerate}
+        onSaveGeneration={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: /Swap original jewellery reference/i }));
+    const file = new File(["jewels"], "new-jewellery.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("New jewellery reference"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
+
+    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.", "front", {
+      mode: "swap",
+      file,
+    });
+    vi.unstubAllGlobals();
   });
 });

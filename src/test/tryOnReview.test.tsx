@@ -181,7 +181,7 @@ describe("model shoot review flow", () => {
 
     expect(screen.queryByRole("button", { name: /Apply this edit/i })).toBeNull();
     expect(screen.getByText(/Both complementary edits on this shoot have been used/)).toBeInTheDocument();
-    expect(screen.getByText(/Start a new shoot if you want another change/)).toBeInTheDocument();
+    expect(screen.getByText(/Start a new edit session if you want another change/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Retry saving to gallery/i })).toBeNull();
   });
 
@@ -404,5 +404,59 @@ describe("model shoot review flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
     expect(onRegenerate).toHaveBeenCalledWith("Tighten the crop on the pendant.", "close_up");
+  });
+
+  it("requires a file when swapping or adding a jewellery reference", () => {
+    const onRegenerate = vi.fn();
+    const generation = makeGeneration();
+    render(
+      <TryOnResults
+        loading={false}
+        results={results}
+        onBack={() => {}}
+        token="t"
+        draft={makeDraft([generation])}
+        activeGeneration={generation}
+        onRegenerate={onRegenerate}
+        onSaveGeneration={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: /Add an extra reference image/i }));
+    expect(screen.getByRole("button", { name: /Apply this edit/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
+    expect(onRegenerate).not.toHaveBeenCalled();
+  });
+
+  it("sends an extra jewellery reference with the edit", () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:preview"),
+      revokeObjectURL: vi.fn(),
+    });
+    const onRegenerate = vi.fn();
+    const generation = makeGeneration();
+    render(
+      <TryOnResults
+        loading={false}
+        results={results}
+        onBack={() => {}}
+        token="t"
+        draft={makeDraft([generation])}
+        activeGeneration={generation}
+        onRegenerate={onRegenerate}
+        onSaveGeneration={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: /Add an extra reference image/i }));
+    const file = new File(["ref"], "extra.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Extra reference image"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
+
+    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.", "front", {
+      mode: "extra",
+      file,
+    });
+    vi.unstubAllGlobals();
   });
 });

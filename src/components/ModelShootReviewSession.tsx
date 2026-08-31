@@ -8,6 +8,7 @@ import {
   apiRegenerateModelShoot,
   apiSaveModelShootDraft,
   getPresignedUrl,
+  type JewelleryReferenceChange,
   type ModelShootDraft,
   type ModelShootGeneration,
   type ModelShootView,
@@ -167,7 +168,11 @@ export default function ModelShootReviewSession({
     }
   };
 
-  const handleRegenerate = async (editPrompt: string, editView: ModelShootView) => {
+  const handleRegenerate = async (
+    editPrompt: string,
+    editView: ModelShootView,
+    jewelleryReference?: JewelleryReferenceChange
+  ) => {
     if (!token || !draft || !activeGenerationUid) return;
     setRegenerating(true);
     const viewLabel = editView === "front" ? "Regular view" : "Close-up view";
@@ -178,13 +183,16 @@ export default function ModelShootReviewSession({
       )}`
     );
     try {
-      const data = await apiRegenerateModelShoot(
-        token,
-        draft.uid,
-        editPrompt,
-        activeGenerationUid,
-        editView
-      );
+      const data = jewelleryReference
+        ? await apiRegenerateModelShoot(
+            token,
+            draft.uid,
+            editPrompt,
+            activeGenerationUid,
+            editView,
+            jewelleryReference
+          )
+        : await apiRegenerateModelShoot(token, draft.uid, editPrompt, activeGenerationUid, editView);
       const nextDraft = data.draft ?? null;
       if (nextDraft) applyDraft(nextDraft);
       const latest =
