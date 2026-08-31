@@ -5,6 +5,8 @@ import {
   complementaryEditsIncluded,
   complementaryEditsLeft,
   editsLeftLabel,
+  modelShootEditsSummary,
+  modelShootViewBudget,
   productShootEditsSummary,
   productShootViewBudget,
 } from "@/lib/modelShootCopy";
@@ -56,6 +58,62 @@ describe("model shoot complementary-edit copy", () => {
       sideRemaining: 0,
       canRegenerateFront: true,
       canRegenerateSide: false,
+      canRegenerate: true,
+    });
+  });
+
+  it("tracks complementary edits separately for regular and close-up model views", () => {
+    expect(
+      modelShootEditsSummary({ views: "both", frontRemaining: 2, closeUpRemaining: 2 })
+    ).toMatch(/Each view comes with 2 complementary edits/);
+    expect(
+      modelShootEditsSummary({ views: "both", frontRemaining: 2, closeUpRemaining: 0 })
+    ).toMatch(/2 complementary edits left on the regular view/);
+    expect(
+      modelShootEditsSummary({ views: "close_up", frontRemaining: 0, closeUpRemaining: 2 })
+    ).toMatch(/Each model shoot comes with 2 complementary edits/);
+
+    const budget = modelShootViewBudget({
+      views: "both",
+      generations: [
+        { front_image_s3_key: "front-1", close_up_image_s3_key: "close-1" },
+        {
+          front_image_s3_key: "front-1",
+          close_up_image_s3_key: "close-2",
+          edited_view: "close_up",
+          applied_edit_prompt: "nudge",
+        },
+        {
+          front_image_s3_key: "front-1",
+          close_up_image_s3_key: "close-3",
+          edited_view: "close_up",
+          applied_edit_prompt: "nudge",
+        },
+      ],
+    });
+    expect(budget).toMatchObject({
+      frontUsed: 0,
+      closeUpUsed: 2,
+      frontRemaining: 2,
+      closeUpRemaining: 0,
+      canRegenerateFront: true,
+      canRegenerateCloseUp: false,
+      canRegenerate: true,
+    });
+  });
+
+  it("does not grant regular-view edits for a close-up-only model shoot", () => {
+    const budget = modelShootViewBudget({
+      views: "close_up",
+      generations: [{ front_image_s3_key: "front-1", close_up_image_s3_key: "close-1" }],
+    });
+    expect(budget).toMatchObject({
+      frontUsed: 0,
+      closeUpUsed: 0,
+      frontRemaining: 0,
+      closeUpRemaining: 2,
+      canRegenerateFront: false,
+      canRegenerateCloseUp: true,
       canRegenerate: true,
     });
   });

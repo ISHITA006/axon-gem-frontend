@@ -36,15 +36,11 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 };
 
 export default function UploadStudioShoot({
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
 }: Props) {
   const { token } = useAuth();
@@ -458,8 +454,6 @@ export default function UploadStudioShoot({
           initialGenerationUid={activeGenerationUid}
           loading={shooting}
           onEditImage={onEditImage}
-          onChangeColour={onChangeColour}
-          onChangeLength={onChangeLength}
           onManualPhotoEdit={onManualPhotoEdit}
           onDraftChange={setDraft}
         />
@@ -472,8 +466,6 @@ export default function UploadStudioShoot({
         onBack={handleBack}
         token={token}
         onEditImage={onEditImage}
-        onChangeColour={onChangeColour}
-        onChangeLength={onChangeLength}
         onManualPhotoEdit={onManualPhotoEdit}
       />
     );

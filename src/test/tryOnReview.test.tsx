@@ -99,7 +99,7 @@ describe("model shoot review flow", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
 
-    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12 and warm the lighting.");
+    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12 and warm the lighting.", "front");
   });
 
   it("blocks applying an edit with an empty prompt", () => {
@@ -205,7 +205,7 @@ describe("model shoot review flow", () => {
     expect(screen.queryByRole("button", { name: /saving to gallery/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
-    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.");
+    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.", "front");
   });
 
   it("offers a retry when a look was not autosaved", () => {
@@ -268,5 +268,141 @@ describe("model shoot review flow", () => {
     expect(screen.getByRole("button", { name: /Back to gallery/i })).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toHaveValue("Increase the stone count to 12.");
     expect(screen.getByRole("button", { name: /Apply this edit/i })).toBeEnabled();
+  });
+
+  it("lets the user apply a regular edit without regenerating the close-up view", () => {
+    const onRegenerate = vi.fn();
+    const generation = makeGeneration({
+      close_up_image_s3_key: "on-model-images/gen1-close.png",
+      front_suggested_edit_prompt: "Increase the stone count to 12.",
+      close_up_suggested_edit_prompt: "Tighten the crop on the pendant.",
+      front_mismatches: ["stone_count_match"],
+      close_up_mismatches: [],
+      suggested_edit_prompt: "Regular view: Increase the stone count to 12.\n\nClose-up view: Tighten the crop on the pendant.",
+    });
+    render(
+      <TryOnResults
+        loading={false}
+        results={{
+          front: "https://example.com/front.png",
+          frontKey: "on-model-images/gen1.png",
+          closeUp: "https://example.com/close.png",
+          closeUpKey: "on-model-images/gen1-close.png",
+          analysis: null,
+        }}
+        onBack={() => {}}
+        token="t"
+        draft={makeDraft([generation], { views: "both" })}
+        activeGeneration={generation}
+        onRegenerate={onRegenerate}
+        onSaveGeneration={() => {}}
+      />
+    );
+
+    expect(screen.getByText("Regular view")).toBeInTheDocument();
+    expect(screen.getByText("Close-up view")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Apply this edit/i })).toBeNull();
+
+    const [frontBox, closeUpBox] = screen.getAllByRole("textbox");
+    expect(frontBox).toHaveValue("Increase the stone count to 12.");
+    expect(closeUpBox).toHaveValue("Tighten the crop on the pendant.");
+
+    fireEvent.change(frontBox, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Apply regular edit/i }));
+    expect(onRegenerate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Apply close-up edit/i }));
+    expect(onRegenerate).toHaveBeenCalledTimes(1);
+    expect(onRegenerate).toHaveBeenCalledWith("Tighten the crop on the pendant.", "close_up");
+
+    fireEvent.change(frontBox, { target: { value: "Increase the stone count to 12." } });
+    fireEvent.click(screen.getByRole("button", { name: /Apply regular edit/i }));
+    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.", "front");
+  });
+
+  it("keeps regular-view edits after the close-up view has used both of its edits", () => {
+    const onRegenerate = vi.fn();
+    const initial = makeGeneration({
+      close_up_image_s3_key: "on-model-images/gen1-close.png",
+      front_suggested_edit_prompt: "Increase the stone count to 12.",
+      close_up_suggested_edit_prompt: "Tighten the crop on the pendant.",
+    });
+    const closeUpEdits = [2, 3].map((i) =>
+      makeGeneration({
+        uid: `gen-${i}`,
+        attempt_index: i,
+        attempt_label: `${i}/5`,
+        close_up_image_s3_key: `on-model-images/gen${i}-close.png`,
+        edited_view: "close_up",
+        applied_edit_prompt: "Tighten the crop on the pendant.",
+        close_up_applied_edit_prompt: "Tighten the crop on the pendant.",
+        front_suggested_edit_prompt: "Increase the stone count to 12.",
+        suggested_edit_prompt: "Increase the stone count to 12.",
+      })
+    );
+    const latest = closeUpEdits[1];
+    render(
+      <TryOnResults
+        loading={false}
+        results={{
+          front: "https://example.com/front.png",
+          frontKey: "on-model-images/gen1.png",
+          closeUp: "https://example.com/close.png",
+          closeUpKey: "on-model-images/gen3-close.png",
+          analysis: null,
+        }}
+        onBack={() => {}}
+        token="t"
+        draft={makeDraft([initial, ...closeUpEdits], { views: "both" })}
+        activeGeneration={latest}
+        onRegenerate={onRegenerate}
+        onSaveGeneration={() => {}}
+      />
+    );
+
+    expect(screen.getByText(/2 complementary edits left on the regular view/)).toBeInTheDocument();
+    expect(screen.getByText(/close-up view edits are used/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Apply regular edit/i })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /Apply close-up edit/i })).toBeNull();
+    expect(screen.getByText(/Both complementary edits on this close-up view have been used/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Apply regular edit/i }));
+    expect(onRegenerate).toHaveBeenCalledWith("Increase the stone count to 12.", "front");
+  });
+
+  it("shows only the close-up view when the shoot was generated close-up-only", () => {
+    const onRegenerate = vi.fn();
+    const generation = makeGeneration({
+      close_up_image_s3_key: "on-model-images/gen1-close.png",
+      close_up_suggested_edit_prompt: "Tighten the crop on the pendant.",
+      suggested_edit_prompt: "Tighten the crop on the pendant.",
+      mismatches: [],
+    });
+    render(
+      <TryOnResults
+        loading={false}
+        results={{
+          closeUp: "https://example.com/close.png",
+          closeUpKey: "on-model-images/gen1-close.png",
+          analysis: null,
+        }}
+        onBack={() => {}}
+        token="t"
+        draft={makeDraft([generation], { views: "close_up" })}
+        activeGeneration={generation}
+        onRegenerate={onRegenerate}
+        onSaveGeneration={() => {}}
+      />
+    );
+
+    expect(screen.getByText("Close-Up View")).toBeInTheDocument();
+    expect(screen.queryByText("Regular View")).toBeNull();
+    expect(screen.getByText(/Each model shoot comes with 2 complementary edits/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Apply this edit/i })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /Apply regular edit/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Apply close-up edit/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Apply this edit/i }));
+    expect(onRegenerate).toHaveBeenCalledWith("Tighten the crop on the pendant.", "close_up");
   });
 });

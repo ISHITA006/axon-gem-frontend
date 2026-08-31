@@ -5,11 +5,9 @@ import {
   ChevronRight,
   Download,
   Loader2,
-  Palette,
   Pencil,
   RefreshCw,
   Save,
-  Scissors,
   SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,8 +47,6 @@ interface StudioShootResultsProps {
   saving?: boolean;
   progressLabel?: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 }
 
@@ -217,8 +213,6 @@ export default function StudioShootResults({
   saving = false,
   progressLabel,
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
 }: StudioShootResultsProps) {
   const { toast } = useToast();
@@ -405,15 +399,6 @@ export default function StudioShootResults({
                         <Pencil className="h-4 w-4 text-foreground" />
                       </button>
                     )}
-                    {onChangeColour && (
-                      <button
-                        onClick={() => onChangeColour(item.s3Key, item.url)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change colour"
-                      >
-                        <Palette className="h-4 w-4 text-foreground" />
-                      </button>
-                    )}
                     {onManualPhotoEdit && (
                       <button
                         onClick={() => onManualPhotoEdit(item.s3Key, item.url)}
@@ -421,15 +406,6 @@ export default function StudioShootResults({
                         title="Manual photo editing"
                       >
                         <SlidersHorizontal className="h-4 w-4 text-foreground" />
-                      </button>
-                    )}
-                    {onChangeLength && (
-                      <button
-                        onClick={() => onChangeLength(item.s3Key, item.url)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change length"
-                      >
-                        <Scissors className="h-4 w-4 text-foreground" />
                       </button>
                     )}
                   </div>

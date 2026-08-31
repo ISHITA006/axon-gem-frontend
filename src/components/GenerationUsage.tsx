@@ -252,7 +252,7 @@ export default function GenerationUsage() {
           title: "Model shoot",
           count: data.model_shoot,
           amount: data.billing.by_category.model_shoot,
-          description: "Main and close-up views",
+              description: "Regular and close-up views",
           icon: SquareUser,
           barClass: "bg-violet-500",
           iconClass: "text-violet-600",
@@ -781,12 +781,13 @@ export default function GenerationUsage() {
                 side together are 2. Complementary edits on a product shoot are billed the same way.
               </p>
               <p>
-                Each returned model-shoot view counts as 1 generation. A main view/close-up view is 1; main plus
-                close-up is 2. Complementary edits on a model shoot are billed the same way.
+                Each returned model-shoot view counts as 1 generation. A regular view or close-up
+                view is 1; regular plus close-up is 2. Complementary edits on a model shoot are billed
+                the same way — editing one view counts as 1.
               </p>
               <p>
-                Each AI image edit — including the Edit Image tool, change colour, and change
-                length — counts as 1 generation. Manual photo editing is not counted.
+                Each AI image edit — including the Edit Image tool — counts as 1 generation.
+                Manual photo editing is not counted.
               </p>
               <p>
                 Model attribution: Nano Banana Pro if it returned an image even once for that

@@ -29,8 +29,6 @@ type Props = {
   categoryTitle: string;
   onBack: () => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
 };
@@ -41,8 +39,6 @@ export function GalleryItemDetail({
   categoryTitle,
   onBack,
   onEditImage,
-  onChangeLength, 
-  onChangeColour,
   onManualPhotoEdit,
   onOpenTryOnWithJewellery,
 }: Props) {
@@ -180,8 +176,6 @@ export function GalleryItemDetail({
             s3Keys={imageKeys}
             captions={captions}
             startIndex={carouselStartIndex}
-            onChangeProductColour={onChangeColour}
-            onChangeProductLength={onChangeLength}
             onManualPhotoEdit={onManualPhotoEdit}
             onEditImage={onEditImage}
             onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}

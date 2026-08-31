@@ -538,6 +538,9 @@ export type TryOnAnalysis = {
 };
 
 /** One stored attempt inside a model-shoot draft (1/3, 2/3, …). */
+export type ModelShootView = "front" | "close_up";
+export type ModelShootViews = "front" | "close_up" | "both";
+
 export type ModelShootGeneration = {
   uid: string;
   attempt_index: number;
@@ -549,6 +552,15 @@ export type ModelShootGeneration = {
   notes?: string | null;
   suggested_edit_prompt?: string | null;
   applied_edit_prompt?: string | null;
+  edited_view?: ModelShootView | null;
+  front_suggested_edit_prompt?: string | null;
+  close_up_suggested_edit_prompt?: string | null;
+  front_mismatches?: string[];
+  close_up_mismatches?: string[];
+  front_notes?: string | null;
+  close_up_notes?: string | null;
+  front_applied_edit_prompt?: string | null;
+  close_up_applied_edit_prompt?: string | null;
   /** True once this generation has been added to the shoot's gallery item. */
   saved: boolean;
   saved_at?: string | null;
@@ -571,6 +583,13 @@ export type ModelShootDraft = {
   can_resume_review?: boolean;
   analysis?: TryOnAnalysis | null;
   gallery_uid?: string | null;
+  views?: ModelShootViews;
+  front_edits_used?: number;
+  front_edits_remaining?: number;
+  can_regenerate_front?: boolean;
+  close_up_edits_used?: number;
+  close_up_edits_remaining?: number;
+  can_regenerate_close_up?: boolean;
   placement_guided: boolean;
   generations: ModelShootGeneration[];
   latest_generation?: ModelShootGeneration | null;
@@ -579,7 +598,7 @@ export type ModelShootDraft = {
 };
 
 export type GenerateTryOnResponse = {
-  front_image_s3_key: string;
+  front_image_s3_key?: string | null;
   close_up_image_s3_key?: string | null;
   analysis?: TryOnAnalysis | null;
   fidelity_verified?: boolean;
@@ -594,11 +613,13 @@ export async function apiRegenerateModelShoot(
   token: string,
   draftUid: string,
   editPrompt: string,
-  sourceGenerationUid?: string | null
+  sourceGenerationUid?: string | null,
+  editView?: ModelShootView | null
 ) {
   const formData = new FormData();
   formData.append("edit_prompt", editPrompt);
   if (sourceGenerationUid) formData.append("source_generation_uid", sourceGenerationUid);
+  if (editView) formData.append("edit_view", editView);
   const res = await fetch(`${API_BASE_URL}/model-shoot-drafts/${draftUid}/regenerate`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -1149,13 +1170,15 @@ export type ApiGenerateTryOnOptions = {
   clothingUid?: string | null;
   /** Optional user-shaded mask (white = jewellery coverage on the model photo). */
   placementMask?: Blob | null;
+  /** Optional user-shaded mask for the close-up pose (used when generating a close-up). */
+  closeUpPlacementMask?: Blob | null;
 };
 
 export async function apiGenerateTryOn(
   token: string,
   jewelleryFile: File | null,
   modelS3Key: string,
-  generateCloseUp: boolean,
+  views: ModelShootViews,
   options?: ApiGenerateTryOnOptions
 ) {
   // Keep below common API gateway limits (stricter than the global 10 MB cap).
@@ -1200,6 +1223,7 @@ export async function apiGenerateTryOn(
   let jewelleryS3Key: string | null = null;
   let jewelleryS3KeyIsEphemeral = false;
   let placementMaskS3Key: string | null = null;
+  let closeUpPlacementMaskS3Key: string | null = null;
 
   try {
     const existingJewellery = options?.existingJewelleryS3Key?.trim();
@@ -1220,9 +1244,11 @@ export async function apiGenerateTryOn(
     }
     const effectiveModelS3Key = poseSelected && modelPoseS3Key ? modelPoseS3Key : modelS3Key;
 
+    const generateCloseUp = views === "close_up" || views === "both";
     const params = new URLSearchParams({
       model_s3_key: effectiveModelS3Key,
       jewellery_s3_key: jewelleryS3Key,
+      views,
       generate_close_up: generateCloseUp ? "true" : "false",
       pose_selected: poseSelected ? "true" : "false",
       aspect_ratio: options?.aspectRatio ?? "2:3",
@@ -1251,6 +1277,11 @@ export async function apiGenerateTryOn(
       placementMaskS3Key = await uploadPlacementMask(placementMask);
       params.set("placement_mask_s3_key", placementMaskS3Key);
     }
+    const closeUpPlacementMask = options?.closeUpPlacementMask;
+    if (generateCloseUp && closeUpPlacementMask && closeUpPlacementMask.size > 0) {
+      closeUpPlacementMaskS3Key = await uploadPlacementMask(closeUpPlacementMask);
+      params.set("close_up_placement_mask_s3_key", closeUpPlacementMaskS3Key);
+    }
 
     const res = await fetch(`${API_BASE_URL}/generate-jewellery-try-on-images?${params.toString()}`, {
       method: "POST",
@@ -1268,6 +1299,9 @@ export async function apiGenerateTryOn(
     if (placementMaskS3Key) {
       await apiDeleteS3Object(token, placementMaskS3Key).catch(() => null);
     }
+    if (closeUpPlacementMaskS3Key) {
+      await apiDeleteS3Object(token, closeUpPlacementMaskS3Key).catch(() => null);
+    }
   }
 }
 
@@ -1279,7 +1313,7 @@ export async function apiGetTryOnImages(token: string) {
   return res.json() as Promise<{ Key: string }[]>;
 }
 
-export type GalleryCategory = "model-shoot" | "product-shoot" | "modified-product" | "edited-image" | "deleted-catalogue";
+export type GalleryCategory = "model-shoot" | "product-shoot" | "edited-image" | "deleted-catalogue";
 
 export type GalleryItem = {
   uid: string;
@@ -1334,8 +1368,6 @@ export async function apiGetGalleryItems(
     path = "/gallery/model-shoot";
   } else if (params.category === "product-shoot") {
     path = "/gallery/product-shoot";
-  } else if (params.category === "modified-product") {
-    path = "/gallery/modified-product";
   } else if (params.category === "edited-image") {
     sp.set("category", "edited-image");
   } else if (params.category === "deleted-catalogue") {
@@ -1697,27 +1729,6 @@ export async function apiGetColourName(token: string, hex: string): Promise<{ na
   return res.json();
 }
 
-export async function apiChangeProductColour(
-  token: string,
-  tryOnImageS3Key: string,
-  primaryColour: string,
-  secondaryColour?: string | null
-): Promise<{ detail: string; s3_key: string; url: string }> {
-  const params = new URLSearchParams({
-    try_on_image_s3_key: tryOnImageS3Key,
-    primary_colour: primaryColour,
-  });
-  if (secondaryColour != null && secondaryColour !== "") {
-    params.append("secondary_colour", secondaryColour);
-  }
-  const res = await fetch(`${API_BASE_URL}/change-product-colour?${params.toString()}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  await assertOk(res, "Failed to change colour");
-  return res.json();
-}
-
 export async function apiChangeBackgroundColour(
   token: string,
   imageS3Key: string,
@@ -1836,25 +1847,6 @@ export async function apiSaveEditedImage(
     headers: { Authorization: `Bearer ${token}` },
   });
   await assertOk(res, "Failed to save edited image");
-  return res.json();
-}
-
-export async function apiChangeProductLength(
-  token: string,
-  tryOnImageS3Key: string,
-  mode: "chain" | "size",
-  length: string
-): Promise<{ detail: string; s3_key: string; url: string }> {
-  const params = new URLSearchParams({
-    try_on_image_s3_key: tryOnImageS3Key,
-    mode,
-    length,
-  });
-  const res = await fetch(`${API_BASE_URL}/change-product-length?${params.toString()}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  await assertOk(res, "Failed to change length");
   return res.json();
 }
 

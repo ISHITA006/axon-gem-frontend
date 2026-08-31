@@ -115,4 +115,48 @@ describe("resume model shoot review from gallery", () => {
     expect(screen.queryByRole("button", { name: /Apply this edit/i })).toBeNull();
     expect(regenerateMock).not.toHaveBeenCalled();
   });
+
+  it("resumes review when the close-up view is spent but the regular view still has edits", async () => {
+    const initial = makeGeneration({
+      close_up_image_s3_key: "on-model-images/gen1-close.png",
+      front_suggested_edit_prompt: "Increase the stone count to 12.",
+      close_up_suggested_edit_prompt: "Tighten the crop on the pendant.",
+    });
+    const closeUpEdits = [2, 3].map((i) =>
+      makeGeneration({
+        uid: `gen-${i}`,
+        attempt_index: i,
+        attempt_label: `${i}/5`,
+        close_up_image_s3_key: `on-model-images/gen${i}-close.png`,
+        edited_view: "close_up",
+        applied_edit_prompt: "Tighten the crop on the pendant.",
+        close_up_applied_edit_prompt: "Tighten the crop on the pendant.",
+        front_suggested_edit_prompt: "Increase the stone count to 12.",
+        suggested_edit_prompt: "Increase the stone count to 12.",
+        saved: true,
+        saved_at: new Date().toISOString(),
+      })
+    );
+    getDraftMock.mockResolvedValue({
+      ...makeDraft([initial, ...closeUpEdits]),
+      views: "both" as const,
+    });
+
+    render(
+      <ModelShootReviewSession
+        draftUid="draft-1"
+        token="t"
+        onBack={() => {}}
+        backLabel="Back to gallery"
+      />,
+      { wrapper }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Apply regular edit/i })).toBeEnabled();
+    });
+    expect(screen.getByText(/2 complementary edits left on the regular view/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Apply close-up edit/i })).toBeNull();
+    expect(regenerateMock).not.toHaveBeenCalled();
+  });
 });

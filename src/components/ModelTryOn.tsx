@@ -26,6 +26,7 @@ import {
   type ModelRecord,
   type ModelPoseRecord,
   type ModelShootDraft,
+  type ModelShootViews,
   type CloseUpPoseRecord,
   type ClothingRecord,
   type PoseRecord,
@@ -39,6 +40,7 @@ import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -71,8 +73,6 @@ export interface ModelTryOnProps {
   /** Presigned or public URL for preview when `s3Key` is set; if omitted, a presigned URL is fetched. */
   imageUrl?: string;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 }
 
@@ -145,7 +145,7 @@ function makeDimensionRow(field?: Partial<PresetField>): DimensionRow {
   };
 }
 
-export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColour, onChangeLength, onManualPhotoEdit }: ModelTryOnProps) {
+export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhotoEdit }: ModelTryOnProps) {
   const { token } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -156,7 +156,9 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   const [clothingExternalS3Key, setClothingExternalS3Key] = useState<string | null>(null);
 
   clothingFileRef.current = clothingFile;
-  const [generateCloseUp, setGenerateCloseUp] = useState(false);
+  const [views, setViews] = useState<ModelShootViews>("front");
+  const generateFront = views === "front" || views === "both";
+  const generateCloseUp = views === "close_up" || views === "both";
   const [aspectRatio, setAspectRatio] = useState<TryOnAspectRatio>("2:3");
   const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("1K");
   const [frontImageLoading, setFrontImageLoading] = useState(false);
@@ -229,7 +231,9 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
 
   const [usePlacementShade, setUsePlacementShade] = useState(false);
   const [placementHasPaint, setPlacementHasPaint] = useState(false);
+  const [closeUpPlacementHasPaint, setCloseUpPlacementHasPaint] = useState(false);
   const placementShadeRef = useRef<PlacementShadeCanvasHandle>(null);
+  const closeUpPlacementShadeRef = useRef<PlacementShadeCanvasHandle>(null);
 
   const allModels = useMemo(
     () => [
@@ -262,15 +266,24 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     return modelUrls[selectedModelUid] || null;
   }, [selectedModelUid, wantModelPose, selectedModelPoseUid, poseRowUrls, modelUrls]);
 
+  const closeUpPlacementImageUrl = useMemo(() => {
+    if (!generateCloseUp || !wantCloseUpPose || !selectedCloseUpPoseUid) return null;
+    return closeUpPoseUrls[selectedCloseUpPoseUid] || null;
+  }, [generateCloseUp, wantCloseUpPose, selectedCloseUpPoseUid, closeUpPoseUrls]);
+
   useEffect(() => {
     setPlacementHasPaint(false);
   }, [placementImageUrl]);
 
+  useEffect(() => {
+    setCloseUpPlacementHasPaint(false);
+  }, [closeUpPlacementImageUrl]);
+
   const [generating, setGenerating] = useState(false);
   const [results, setResults] = useState<{
-    front: string;
+    front?: string;
     closeUp?: string;
-    frontKey: string;
+    frontKey?: string;
     closeUpKey?: string;
     analysis?: TryOnAnalysis | null;
   } | null>(null);
@@ -331,7 +344,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
   }, [token]);
 
   useEffect(() => {
-    if (!wantModelPose || !selectedModelUid || !token) {
+    if (!generateFront || !wantModelPose || !selectedModelUid || !token) {
       setModelPoseRows([]);
       setPoseRowUrls({});
       setSelectedModelPoseUid(null);
@@ -376,7 +389,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     return () => {
       cancelled = true;
     };
-  }, [wantModelPose, selectedModelUid, token, toast]);
+  }, [generateFront, wantModelPose, selectedModelUid, token, toast]);
 
   useEffect(() => {
     if (!generateCloseUp || !token) {
@@ -575,6 +588,22 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
     }
   };
 
+  const handleViewsChange = (next: ModelShootViews) => {
+    setViews(next);
+    if (next === "front") {
+      setWantCloseUpPose(false);
+      setSelectedCloseUpPoseUid(null);
+      setCloseUpPlacementHasPaint(false);
+    } else if (next === "close_up") {
+      setWantModelPose(false);
+      setSelectedModelPoseUid(null);
+      setPlacementHasPaint(false);
+      if (usePlacementShade) setWantCloseUpPose(true);
+    } else if (usePlacementShade) {
+      setWantCloseUpPose(true);
+    }
+  };
+
   const handleGenerate = async () => {
     const hasFrontGarment = Boolean(clothingFile || clothingExternalS3Key);
     if (!hasFrontGarment || !selectedModelUid || !token) {
@@ -590,7 +619,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       toast({ title: "Missing model", description: "Selected model could not be found.", variant: "destructive" });
       return;
     }
-    if (wantModelPose && !selectedModelPoseS3Key) {
+    if (generateFront && wantModelPose && !selectedModelPoseS3Key) {
       toast({
         title: "Missing pose",
         description: "Pick one of this model's poses, or turn off the pose option.",
@@ -622,7 +651,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       });
       return;
     }
-    if (usePlacementShade && wantModelPose && !selectedModelPoseS3Key) {
+    if (usePlacementShade && generateFront && wantModelPose && !selectedModelPoseS3Key) {
       toast({
         title: "Missing pose",
         description: "Pick a model pose before shading the jewellery placement area.",
@@ -630,16 +659,38 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
       });
       return;
     }
+    if (usePlacementShade && generateCloseUp && !selectedCloseUpPoseS3Key) {
+      toast({
+        title: "Missing close-up pose",
+        description: "Pick a close-up pose before shading the close-up jewellery placement area.",
+        variant: "destructive",
+      });
+      return;
+    }
     let placementMask: Blob | null = null;
+    let closeUpPlacementMask: Blob | null = null;
     if (usePlacementShade) {
-      placementMask = (await placementShadeRef.current?.exportMaskBlob()) ?? null;
-      if (!placementMask) {
-        toast({
-          title: "Missing placement shade",
-          description: "Shade a rough placement area on the model, or turn off placement shading.",
-          variant: "destructive",
-        });
-        return;
+      if (generateFront) {
+        placementMask = (await placementShadeRef.current?.exportMaskBlob()) ?? null;
+        if (!placementMask) {
+          toast({
+            title: "Missing placement shade",
+            description: "Shade a rough placement area on the model, or turn off placement shading.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      if (generateCloseUp) {
+        closeUpPlacementMask = (await closeUpPlacementShadeRef.current?.exportMaskBlob()) ?? null;
+        if (!closeUpPlacementMask) {
+          toast({
+            title: "Missing close-up placement shade",
+            description: "Shade a rough placement area on the close-up pose, or turn off placement shading.",
+            variant: "destructive",
+          });
+          return;
+        }
       }
     }
     setGenerating(true);
@@ -653,31 +704,39 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         token,
         clothingExternalS3Key ? null : clothingFile,
         selectedModel.image_s3_key,
-        generateCloseUp,
+        views,
         {
           aspectRatio,
           outputQuality,
           brandKitUid: selectedBrandKitUid,
           backgroundS3Key: useBackground ? selectedBackground : null,
           dimensions: useDimensions ? collectMeasurements() : null,
-          poseSelected: wantModelPose,
-          modelPoseS3Key: wantModelPose ? selectedModelPoseS3Key : null,
+          poseSelected: generateFront && wantModelPose,
+          modelPoseS3Key: generateFront && wantModelPose ? selectedModelPoseS3Key : null,
           closeUpPoseS3Key: generateCloseUp && wantCloseUpPose ? selectedCloseUpPoseS3Key : null,
           clothingUid: useClothing ? selectedClothingUid : null,
           placementMask,
+          closeUpPlacementMask,
           ...(clothingExternalS3Key ? { existingJewelleryS3Key: clothingExternalS3Key } : {}),
         }
       );
-      const frontUrl = await getPresignedUrl(token, data.front_image_s3_key);
-      const closeUpKey = data.close_up_image_s3_key;
-      const closeUpUrl =
-        closeUpKey && generateCloseUp ? await getPresignedUrl(token, closeUpKey) : undefined;
+      const includeFront = generateFront;
+      const includeCloseUp = generateCloseUp;
+      const frontKey = includeFront ? data.front_image_s3_key ?? undefined : undefined;
+      const closeUpKey = includeCloseUp ? data.close_up_image_s3_key ?? undefined : undefined;
+      if (includeFront && !frontKey) {
+        throw new Error("Regular view was not produced. Please try again.");
+      }
+      if (includeCloseUp && !closeUpKey) {
+        throw new Error("Close-up view was not produced. Please try again.");
+      }
+      const frontUrl = frontKey ? await getPresignedUrl(token, frontKey) : undefined;
+      const closeUpUrl = closeUpKey ? await getPresignedUrl(token, closeUpKey) : undefined;
       setDraft(data.draft ?? null);
       setActiveGenerationUid(data.generation_uid ?? data.draft?.latest_generation?.uid ?? null);
       setResults({
-        front: frontUrl,
+        ...(frontUrl && frontKey ? { front: frontUrl, frontKey } : {}),
         ...(closeUpUrl && closeUpKey ? { closeUp: closeUpUrl, closeUpKey } : {}),
-        frontKey: data.front_image_s3_key,
         analysis: data.analysis ?? null,
       });
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
@@ -686,7 +745,9 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         title: "Your look is ready",
         description: [
           autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
-          "Each model shoot comes with 2 complementary edits if you’d like a change.",
+          views === "both"
+            ? "Each view comes with 2 complementary edits if you’d like a change."
+            : "Each model shoot comes with 2 complementary edits if you’d like a change.",
         ].join(" "),
       });
     } catch (err) {
@@ -717,8 +778,6 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
           initialGenerationUid={activeGenerationUid}
           loading={generating}
           onEditImage={onEditImage}
-          onChangeColour={onChangeColour}
-          onChangeLength={onChangeLength}
           onManualPhotoEdit={onManualPhotoEdit}
           onDraftChange={setDraft}
         />
@@ -782,28 +841,57 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
         <div className="flex flex-col gap-6">
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id="generateCloseUp"
-                  checked={generateCloseUp}
-                  onCheckedChange={(v) => {
-                    const next = !!v;
-                    setGenerateCloseUp(next);
-                    if (!next) {
-                      setWantCloseUpPose(false);
-                      setSelectedCloseUpPoseUid(null);
-                    }
-                  }}
-                  className="mt-0.5"
-                />
-                <div className="space-y-1">
-                  <Label htmlFor="generateCloseUp" className="text-sm font-medium leading-snug cursor-pointer">
-                    Generate a close-up highlighting the jewellery
-                  </Label>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Views to generate</p>
                   <p className="text-xs text-muted-foreground">
-                    Adds a tight close-up of the same model in a pose that spotlights the piece.
+                    Choose a regular on-model shot, a close-up of the jewellery, or both.
                   </p>
                 </div>
+                <RadioGroup
+                  value={views}
+                  onValueChange={(value) => handleViewsChange(value as ModelShootViews)}
+                  className="grid gap-3 sm:grid-cols-3"
+                >
+                  {(
+                    [
+                      {
+                        value: "front",
+                        title: "Regular view",
+                        description: "Full on-model shot of the piece.",
+                      },
+                      {
+                        value: "close_up",
+                        title: "Close-up view",
+                        description: "Tight crop highlighting the jewellery.",
+                      },
+                      {
+                        value: "both",
+                        title: "Both views",
+                        description: "Regular shot plus a jewellery close-up.",
+                      },
+                    ] as const
+                  ).map((option) => (
+                    <label
+                      key={option.value}
+                      htmlFor={`model-views-${option.value}`}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3 transition hover:border-primary/50",
+                        views === option.value && "border-primary bg-primary/5 ring-1 ring-primary/30"
+                      )}
+                    >
+                      <RadioGroupItem
+                        id={`model-views-${option.value}`}
+                        value={option.value}
+                        className="mt-0.5"
+                      />
+                      <div className="space-y-1">
+                        <span className="text-sm font-medium leading-snug">{option.title}</span>
+                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                      </div>
+                    </label>
+                  ))}
+                </RadioGroup>
               </div>
 
               {generateCloseUp && (
@@ -812,6 +900,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
                     <Checkbox
                       id="wantCloseUpPose"
                       checked={wantCloseUpPose}
+                      disabled={usePlacementShade}
                       onCheckedChange={(v) => {
                         const next = !!v;
                         setWantCloseUpPose(next);
@@ -819,7 +908,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
                       }}
                     />
                     <Label htmlFor="wantCloseUpPose" className="text-sm font-normal leading-none">
-                      Select close-up pose reference (optional)
+                      Select close-up pose reference{usePlacementShade ? "" : " (optional)"}
                     </Label>
                   </div>
 
@@ -827,7 +916,10 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
                     <div>
                       <p className="mb-3 text-xs text-muted-foreground">
                         Pick a close-up pose. The generated close-up will replicate this
-                        framing and pose on your model wearing the jewellery.
+                        framing and pose on your model wearing the jewellery
+                        {usePlacementShade
+                          ? ", and you will shade the jewellery placement on this pose below."
+                          : "."}
                       </p>
                       {closeUpPosesLoading ? (
                         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
@@ -1224,18 +1316,20 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
 
           {selectedModelUid && (
             <div className="mt-6 space-y-4 border-t pt-6">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="wantModelPose"
-                  checked={wantModelPose}
-                  onCheckedChange={(v) => setWantModelPose(!!v)}
-                />
-                <Label htmlFor="wantModelPose" className="text-sm font-normal leading-none">
-                  Select model pose
-                </Label>
-              </div>
+              {generateFront && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="wantModelPose"
+                      checked={wantModelPose}
+                      onCheckedChange={(v) => setWantModelPose(!!v)}
+                    />
+                    <Label htmlFor="wantModelPose" className="text-sm font-normal leading-none">
+                      Select model pose
+                    </Label>
+                  </div>
 
-              {wantModelPose && (
+                  {wantModelPose && (
                 <div>
                   <h3 className="mb-3 text-sm font-semibold">Select a model pose</h3>
                   <p className="mb-3 text-xs text-muted-foreground">
@@ -1294,9 +1388,11 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
                     </div>
                   )}
                 </div>
+                  )}
+                </>
               )}
 
-              <div className="space-y-4 border-t pt-4">
+              <div className={cn("space-y-4", generateFront && "border-t pt-4")}>
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="wantClothing"
@@ -1397,7 +1493,12 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
                   onCheckedChange={(v) => {
                     const next = !!v;
                     setUsePlacementShade(next);
-                    if (!next) setPlacementHasPaint(false);
+                    if (!next) {
+                      setPlacementHasPaint(false);
+                      setCloseUpPlacementHasPaint(false);
+                    } else if (generateCloseUp) {
+                      setWantCloseUpPose(true);
+                    }
                   }}
                 />
                 <Label htmlFor="usePlacementShade" className="text-xs">
@@ -1407,27 +1508,58 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
             </div>
           </CardHeader>
           {usePlacementShade && (
-            <CardContent>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Paint a rough mark on the selected model
-                {wantModelPose ? " pose" : ""} for where the piece should sit and about how large it
-                should read. This is a hint only — Gemini does a realistic try-on, not a paste that
-                fills your shade. The model photo is kept as-is; clothing and background restyling
-                are skipped for this shot.
+            <CardContent className="space-y-8">
+              <p className="text-xs text-muted-foreground">
+                Paint a rough mark for where the piece should sit and about how large it should
+                read. This is a hint only — Gemini does a realistic try-on, not a paste that fills
+                your shade.
+                {generateFront && generateCloseUp
+                  ? " Shade the regular on-model shot and the close-up pose separately."
+                  : generateCloseUp
+                    ? " Shade the jewellery area on the close-up pose."
+                    : " Shade the regular on-model shot."}
               </p>
-              {wantModelPose && !selectedModelPoseUid ? (
-                <p className="text-sm text-muted-foreground">
-                  Pick a model pose above, then shade the jewellery area on that pose.
-                </p>
-              ) : placementImageUrl ? (
-                <PlacementShadeCanvas
-                  key={placementImageUrl}
-                  ref={placementShadeRef}
-                  imageUrl={placementImageUrl}
-                  onPaintChange={setPlacementHasPaint}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">Loading model image…</p>
+
+              {generateFront && (
+                <div className="space-y-4">
+                  <p className="text-sm font-medium">Regular model shoot</p>
+                  {wantModelPose && !selectedModelPoseUid ? (
+                    <p className="text-sm text-muted-foreground">
+                      Pick a model pose above, then shade the jewellery area on that pose.
+                    </p>
+                  ) : placementImageUrl ? (
+                    <PlacementShadeCanvas
+                      key={placementImageUrl}
+                      ref={placementShadeRef}
+                      imageUrl={placementImageUrl}
+                      imageAlt="Model for jewellery placement"
+                      onPaintChange={setPlacementHasPaint}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Loading model image…</p>
+                  )}
+                </div>
+              )}
+
+              {generateCloseUp && (
+                <div className={cn("space-y-4", generateFront && "border-t pt-6")}>
+                  <p className="text-sm font-medium">Close-up model shoot</p>
+                  {!wantCloseUpPose || !selectedCloseUpPoseUid ? (
+                    <p className="text-sm text-muted-foreground">
+                      Pick a close-up pose above, then shade the jewellery area on that pose.
+                    </p>
+                  ) : closeUpPlacementImageUrl ? (
+                    <PlacementShadeCanvas
+                      key={closeUpPlacementImageUrl}
+                      ref={closeUpPlacementShadeRef}
+                      imageUrl={closeUpPlacementImageUrl}
+                      imageAlt="Close-up pose for jewellery placement"
+                      onPaintChange={setCloseUpPlacementHasPaint}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Loading close-up pose…</p>
+                  )}
+                </div>
               )}
             </CardContent>
           )}
@@ -1443,11 +1575,13 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onChangeColou
             generating ||
             !(clothingFile || clothingExternalS3Key) ||
             !selectedModelUid ||
-            (wantModelPose && !selectedModelPoseS3Key) ||
+            (generateFront && wantModelPose && !selectedModelPoseS3Key) ||
             (generateCloseUp && wantCloseUpPose && !selectedCloseUpPoseS3Key) ||
             (useBackground && !selectedBackground) ||
             (useClothing && !selectedClothingUid) ||
-            (usePlacementShade && !placementHasPaint)
+            (usePlacementShade && generateFront && !placementHasPaint) ||
+            (usePlacementShade && generateCloseUp && !closeUpPlacementHasPaint) ||
+            (usePlacementShade && generateCloseUp && !selectedCloseUpPoseS3Key)
           }
           className="min-w-[220px]"
         >

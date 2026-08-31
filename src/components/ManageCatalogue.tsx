@@ -25,12 +25,10 @@ import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 };
 
-export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeLength, onManualPhotoEdit }: Props) {
+export default function ManageCatalogue({ onEditImage, onManualPhotoEdit }: Props) {
   const { token } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -279,8 +277,6 @@ export default function ManageCatalogue({ onEditImage, onChangeColour, onChangeL
         onUploadFiles={handleUploadNewImages}
         onRemoveImageKey={(k) => void removeImageKey(k)}
         onFormChange={(next) => setEditForm(next)}
-        onChangeProductColour={onChangeColour}
-        onChangeProductLength={onChangeLength}
         onManualPhotoEdit={onManualPhotoEdit}
         onEditImage={onEditImage}
       />

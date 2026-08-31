@@ -10,14 +10,16 @@ import {
   getPresignedUrl,
   type ModelShootDraft,
   type ModelShootGeneration,
+  type ModelShootView,
+  type ModelShootViews,
   type TryOnAnalysis,
 } from "@/lib/api";
-import { applyEditProgressLabel } from "@/lib/modelShootCopy";
+import { applyViewEditProgressLabel, modelShootTracksCloseUp, modelShootTracksFront, modelShootViewBudget, resolveModelShootViews } from "@/lib/modelShootCopy";
 
 export type ReviewResults = {
-  front: string;
+  front?: string;
   closeUp?: string;
-  frontKey: string;
+  frontKey?: string;
   closeUpKey?: string;
   analysis?: TryOnAnalysis | null;
 };
@@ -33,8 +35,6 @@ type Props = {
   loading?: boolean;
   isActive?: boolean;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onDraftChange?: (draft: ModelShootDraft) => void;
 };
@@ -54,8 +54,6 @@ export default function ModelShootReviewSession({
   loading = false,
   isActive = true,
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
   onDraftChange,
 }: Props) {
@@ -92,20 +90,27 @@ export default function ModelShootReviewSession({
   );
 
   const showGeneration = useCallback(
-    async (generation: ModelShootGeneration, analysis?: TryOnAnalysis | null) => {
+    async (
+      generation: ModelShootGeneration,
+      analysis?: TryOnAnalysis | null,
+      draftViews?: ModelShootViews | null
+    ) => {
       if (!token) return;
-      const frontUrl = await getPresignedUrl(token, generation.front_image_s3_key);
-      const closeUpKey = generation.close_up_image_s3_key ?? undefined;
+      const views = resolveModelShootViews(draftViews ?? draft?.views);
+      const includeFront = modelShootTracksFront(views);
+      const includeCloseUp = modelShootTracksCloseUp(views);
+      const frontKey = includeFront ? generation.front_image_s3_key || undefined : undefined;
+      const closeUpKey = includeCloseUp ? generation.close_up_image_s3_key ?? undefined : undefined;
+      const frontUrl = frontKey ? await getPresignedUrl(token, frontKey) : undefined;
       const closeUpUrl = closeUpKey ? await getPresignedUrl(token, closeUpKey) : undefined;
       setActiveGenerationUid(generation.uid);
       setResults({
-        front: frontUrl,
+        ...(frontUrl && frontKey ? { front: frontUrl, frontKey } : {}),
         ...(closeUpUrl && closeUpKey ? { closeUp: closeUpUrl, closeUpKey } : {}),
-        frontKey: generation.front_image_s3_key,
         analysis: analysis ?? draft?.analysis ?? null,
       });
     },
-    [token, draft?.analysis]
+    [token, draft?.analysis, draft?.views]
   );
 
   const loadDraft = useCallback(
@@ -118,7 +123,7 @@ export default function ModelShootReviewSession({
         nextDraft.latest_generation ??
         null;
       if (generation) {
-        await showGeneration(generation, nextDraft.analysis ?? null);
+        await showGeneration(generation, nextDraft.analysis ?? null, nextDraft.views);
       }
     },
     [token, applyDraft, showGeneration]
@@ -162,12 +167,24 @@ export default function ModelShootReviewSession({
     }
   };
 
-  const handleRegenerate = async (editPrompt: string) => {
+  const handleRegenerate = async (editPrompt: string, editView: ModelShootView) => {
     if (!token || !draft || !activeGenerationUid) return;
     setRegenerating(true);
-    setProgressLabel(applyEditProgressLabel(draft.generations_used, draft.max_generations));
+    const viewLabel = editView === "front" ? "Regular view" : "Close-up view";
+    const budget = modelShootViewBudget(draft);
+    setProgressLabel(
+      `${viewLabel} · ${applyViewEditProgressLabel(
+        editView === "front" ? budget.frontUsed : budget.closeUpUsed
+      )}`
+    );
     try {
-      const data = await apiRegenerateModelShoot(token, draft.uid, editPrompt, activeGenerationUid);
+      const data = await apiRegenerateModelShoot(
+        token,
+        draft.uid,
+        editPrompt,
+        activeGenerationUid,
+        editView
+      );
       const nextDraft = data.draft ?? null;
       if (nextDraft) applyDraft(nextDraft);
       const latest =
@@ -175,15 +192,16 @@ export default function ModelShootReviewSession({
         nextDraft?.latest_generation ??
         null;
       if (latest) {
-        await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null);
+        await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null, nextDraft?.views);
       }
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+      const viewName = editView === "front" ? "regular view" : "close-up view";
       toast({
-        title: "Edit applied",
+        title: `${viewLabel} updated`,
         description: latest
           ? latest.saved
-            ? "Your new look is ready and saved to this shoot."
-            : "Your new look is ready. It is not in the gallery yet."
+            ? `The new ${viewName} is ready and saved to this shoot.`
+            : `The new ${viewName} is ready. It is not in the gallery yet.`
           : "Your new look is ready.",
       });
     } catch (err) {
@@ -217,8 +235,6 @@ export default function ModelShootReviewSession({
       backLabel={backLabel}
       token={token}
       onEditImage={onEditImage}
-      onChangeColour={onChangeColour}
-      onChangeLength={onChangeLength}
       onManualPhotoEdit={onManualPhotoEdit}
       draft={draft}
       activeGeneration={activeGeneration}

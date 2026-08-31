@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Gem,
   Images,
@@ -17,6 +18,8 @@ import {
   BriefcaseBusiness,
   Shirt,
   BarChart3,
+  Settings,
+  ChevronDown,
 } from "lucide-react";
 import {
   Sidebar,
@@ -27,15 +30,17 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/contexts/AuthContext";
 
 export type TabValue =
   | "tryon"
-  | "colour"
-  | "length"
   | "manualPhotoEdit"
   | "gallery"
   | "catalogue"
@@ -54,15 +59,17 @@ export type TabValue =
   | "productBrandKit"
   | "generationUsage";
 
-const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = [
+type NavItem = { title: string; value: TabValue; icon: React.ElementType };
+
+const mainNavItems: NavItem[] = [
   { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
   { title: "Model Shoot", value: "tryon", icon: SquareUser },
   { title: "Edit Image", value: "editImage", icon: Wand2 },
-  { title: "Product Shoot Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
-  { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
   { title: "My Gallery", value: "gallery", icon: Images },
-  { title: "Generation Usage", value: "generationUsage", icon: BarChart3 },
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
+];
+
+const settingsNavItems: NavItem[] = [
   { title: "Manage Models", value: "models", icon: Users },
   { title: "Manage Poses", value: "poses", icon: PersonStanding },
   { title: "Manage Clothing", value: "clothing", icon: Shirt },
@@ -72,7 +79,11 @@ const navItems: { title: string; value: TabValue; icon: React.ElementType }[] = 
   { title: "Manage Close-Up Poses", value: "closeUpPoses", icon: LucideCamera },
   { title: "Manage Backgrounds", value: "backgrounds", icon: ImagePlus },
   { title: "Catalog Viewer Management", value: "catalogViewerManagement", icon: UserCog },
+  { title: "Product Shoot Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
+  { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
 ];
+
+const settingsTabValues = new Set(settingsNavItems.map((item) => item.value));
 
 interface AppSidebarProps {
   activeTab: TabValue;
@@ -80,20 +91,20 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
-  const { state } = useSidebar();
+  const { state, setOpen } = useSidebar();
   const collapsed = state === "collapsed";
   const { logout } = useAuth();
+  const settingsTabActive = settingsTabValues.has(activeTab);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>
-            {!collapsed && "axonGem Admin"}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel>{!collapsed && "axonGem Admin"}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
+              {mainNavItems.map((item) => (
                 <SidebarMenuItem key={item.value}>
                   <SidebarMenuButton
                     isActive={activeTab === item.value}
@@ -112,12 +123,79 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout} tooltip="Sign Out">
-              <LogOut className="h-4 w-4" />
-              {!collapsed && <span>Sign Out</span>}
+            <SidebarMenuButton
+              isActive={activeTab === "generationUsage"}
+              onClick={() => onTabChange("generationUsage")}
+              tooltip="Generation Usage"
+            >
+              <BarChart3 className="h-4 w-4" />
+              {!collapsed && <span>Generation Usage</span>}
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        {collapsed ? (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={settingsTabActive}
+                tooltip="Settings"
+                onClick={() => {
+                  setOpen(true);
+                  setSettingsOpen(true);
+                }}
+              >
+                <Settings className="h-4 w-4" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={logout} tooltip="Sign Out">
+                <LogOut className="h-4 w-4" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        ) : (
+          <>
+            <Collapsible
+              open={settingsOpen}
+              onOpenChange={setSettingsOpen}
+              className="group/settings"
+            >
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton isActive={settingsTabActive} tooltip="Settings">
+                      <Settings className="h-4 w-4" />
+                      <span>Settings</span>
+                      <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/settings:rotate-180" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub className="max-h-[min(50vh,22rem)] overflow-y-auto">
+                      {settingsNavItems.map((item) => (
+                        <SidebarMenuSubItem key={item.value}>
+                          <SidebarMenuSubButton asChild isActive={activeTab === item.value}>
+                            <button type="button" onClick={() => onTabChange(item.value)}>
+                              <item.icon />
+                              <span>{item.title}</span>
+                            </button>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </Collapsible>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={logout} tooltip="Sign Out">
+                  <LogOut className="h-4 w-4" />
+                  <span>Sign Out</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </>
+        )}
       </SidebarFooter>
     </Sidebar>
   );

@@ -69,6 +69,46 @@ export function productShootEditsSummary(args: {
   return `${remainingPhrase("front view", frontLeft, included)} ${remainingPhrase("side view", sideLeft, included)}`;
 }
 
+export type ModelShootDraftViews = "front" | "close_up" | "both";
+
+export function resolveModelShootViews(
+  views?: ModelShootDraftViews | null,
+  generations?: Array<{ close_up_image_s3_key?: string | null }>
+): ModelShootDraftViews {
+  if (views === "front" || views === "close_up" || views === "both") return views;
+  if ((generations ?? []).some((gen) => Boolean(gen.close_up_image_s3_key))) return "both";
+  return "front";
+}
+
+export function modelShootTracksFront(views: ModelShootDraftViews): boolean {
+  return views === "front" || views === "both";
+}
+
+export function modelShootTracksCloseUp(views: ModelShootDraftViews): boolean {
+  return views === "close_up" || views === "both";
+}
+
+export function modelShootEditsSummary(args: {
+  views: ModelShootDraftViews;
+  frontRemaining: number;
+  closeUpRemaining: number;
+  included?: number;
+}): string {
+  const included = args.included ?? COMPLEMENTARY_EDITS_PER_VIEW;
+  if (args.views !== "both") {
+    const left = args.views === "close_up" ? args.closeUpRemaining : args.frontRemaining;
+    return editsLeftLabel(left, included, "model shoot");
+  }
+  const { frontRemaining: frontLeft, closeUpRemaining: closeUpLeft } = args;
+  if (frontLeft <= 0 && closeUpLeft <= 0) {
+    return "Both complementary edits on the regular view and the close-up view have been used.";
+  }
+  if (frontLeft === included && closeUpLeft === included) {
+    return "Each view comes with 2 complementary edits. Apply them separately to the regular or close-up view.";
+  }
+  return `${remainingPhrase("regular view", frontLeft, included)} ${remainingPhrase("close-up view", closeUpLeft, included)}`;
+}
+
 export type ProductShootViewBudget = {
   frontUsed: number;
   sideUsed: number;
@@ -139,5 +179,78 @@ export function productShootViewBudget(draft: ProductShootBudgetSource | null | 
     canRegenerateFront: tracksFront && frontRemaining > 0,
     canRegenerateSide: tracksSide && sideRemaining > 0,
     canRegenerate: (tracksFront && frontRemaining > 0) || (tracksSide && sideRemaining > 0),
+  };
+}
+
+export type ModelShootViewBudget = {
+  frontUsed: number;
+  closeUpUsed: number;
+  frontRemaining: number;
+  closeUpRemaining: number;
+  canRegenerateFront: boolean;
+  canRegenerateCloseUp: boolean;
+  canRegenerate: boolean;
+};
+
+type ModelShootBudgetSource = {
+  views?: "front" | "close_up" | "both";
+  front_edits_used?: number | null;
+  front_edits_remaining?: number | null;
+  can_regenerate_front?: boolean | null;
+  close_up_edits_used?: number | null;
+  close_up_edits_remaining?: number | null;
+  can_regenerate_close_up?: boolean | null;
+  generations?: Array<{
+    edited_view?: "front" | "close_up" | null;
+    applied_edit_prompt?: string | null;
+    front_image_s3_key?: string | null;
+    close_up_image_s3_key?: string | null;
+  }>;
+};
+
+export function modelShootViewBudget(draft: ModelShootBudgetSource | null | undefined): ModelShootViewBudget {
+  const views = resolveModelShootViews(draft?.views, draft?.generations);
+  const tracksFront = modelShootTracksFront(views);
+  const tracksCloseUp = modelShootTracksCloseUp(views);
+  const included = COMPLEMENTARY_EDITS_PER_VIEW;
+  const hasExplicit =
+    draft?.front_edits_remaining != null ||
+    draft?.close_up_edits_remaining != null ||
+    draft?.front_edits_used != null ||
+    draft?.close_up_edits_used != null;
+
+  let frontUsed = 0;
+  let closeUpUsed = 0;
+  if (hasExplicit) {
+    frontUsed = draft?.front_edits_used ?? Math.max(0, included - (draft?.front_edits_remaining ?? included));
+    closeUpUsed = draft?.close_up_edits_used ?? Math.max(0, included - (draft?.close_up_edits_remaining ?? included));
+  } else {
+    let unlabeled = 0;
+    for (const gen of draft?.generations ?? []) {
+      if (gen.edited_view === "front") frontUsed += 1;
+      else if (gen.edited_view === "close_up") closeUpUsed += 1;
+      else if (gen.applied_edit_prompt) {
+        if (gen.front_image_s3_key && tracksFront) frontUsed += 1;
+        if (gen.close_up_image_s3_key && tracksCloseUp) closeUpUsed += 1;
+        if (tracksFront && !gen.front_image_s3_key && !gen.close_up_image_s3_key) frontUsed += 1;
+      } else {
+        unlabeled += 1;
+      }
+    }
+    const extra = Math.max(0, unlabeled - 1);
+    if (extra && views === "close_up") closeUpUsed += extra;
+    else if (extra && tracksFront) frontUsed += extra;
+  }
+
+  const frontRemaining = tracksFront ? Math.max(0, included - frontUsed) : 0;
+  const closeUpRemaining = tracksCloseUp ? Math.max(0, included - closeUpUsed) : 0;
+  return {
+    frontUsed,
+    closeUpUsed,
+    frontRemaining,
+    closeUpRemaining,
+    canRegenerateFront: tracksFront && frontRemaining > 0,
+    canRegenerateCloseUp: tracksCloseUp && closeUpRemaining > 0,
+    canRegenerate: (tracksFront && frontRemaining > 0) || (tracksCloseUp && closeUpRemaining > 0),
   };
 }

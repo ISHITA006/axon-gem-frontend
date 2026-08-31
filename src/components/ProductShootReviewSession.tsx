@@ -25,8 +25,6 @@ type Props = {
   loading?: boolean;
   isActive?: boolean;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onDraftChange?: (draft: ProductShootDraft) => void;
 };
@@ -68,8 +66,6 @@ export default function ProductShootReviewSession({
   loading = false,
   isActive = true,
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
   onDraftChange,
 }: Props) {
@@ -245,8 +241,6 @@ export default function ProductShootReviewSession({
       progressLabel={progressLabel}
       loadingTitle={loadingDraft && !loading && !regenerating ? "Loading..." : undefined}
       onEditImage={onEditImage}
-      onChangeColour={onChangeColour}
-      onChangeLength={onChangeLength}
       onManualPhotoEdit={onManualPhotoEdit}
     />
   );

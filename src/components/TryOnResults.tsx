@@ -3,8 +3,6 @@ import {
   Download,
   ArrowLeft,
   Loader2,
-  Scissors,
-  Palette,
   Pencil,
   SlidersHorizontal,
   ChevronLeft,
@@ -18,39 +16,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import AddToCataloguePanel from "@/components/AddToCataloguePanel";
-import { downloadImage, type ModelShootDraft, type ModelShootGeneration, type TryOnAnalysis } from "@/lib/api";
 import {
-  complementaryEditsIncluded,
-  complementaryEditsLeft,
-  editsLeftLabel,
+  downloadImage,
+  type ModelShootDraft,
+  type ModelShootGeneration,
+  type ModelShootView,
+  type TryOnAnalysis,
+} from "@/lib/api";
+import {
+  COMPLEMENTARY_EDITS_PER_VIEW,
+  modelShootEditsSummary,
+  modelShootViewBudget,
+  resolveModelShootViews,
 } from "@/lib/modelShootCopy";
 import { useToast } from "@/hooks/use-toast";
 
 interface TryOnResultsProps {
   loading: boolean;
   results: {
-    front: string;
+    front?: string;
     closeUp?: string;
-    frontKey: string;
+    frontKey?: string;
     closeUpKey?: string;
     analysis?: TryOnAnalysis | null;
   } | null;
   onBack: () => void;
   token: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   /** Review session holding every generation for this shoot. */
   draft?: ModelShootDraft | null;
   activeGeneration?: ModelShootGeneration | null;
   onSelectGeneration?: (generationUid: string) => void;
-  /** Called with the (possibly user-edited) prompt when an edit is applied. */
-  onRegenerate?: (editPrompt: string) => void;
+  /** Called with the (possibly user-edited) prompt when an edit is applied to one view. */
+  onRegenerate?: (editPrompt: string, editView: ModelShootView) => void;
   onSaveGeneration?: () => void;
   regenerating?: boolean;
   saving?: boolean;
-  /** Progress label shown while an edit is running, e.g. "Edit 1 of 2". */
+  /** Progress label shown while an edit is running, e.g. "Regular view · Edit 1 of 2". */
   progressLabel?: string | null;
   backLabel?: string;
   loadingTitle?: string;
@@ -82,14 +85,136 @@ function joinTweaks(fields: string[]): string {
   return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 }
 
+function viewLabel(view: ModelShootView): string {
+  return view === "front" ? "regular view" : "close-up view";
+}
+
+function viewEditState(
+  generation: ModelShootGeneration | null | undefined,
+  view: ModelShootView,
+  bothViews: boolean
+) {
+  const suggested =
+    (view === "front" ? generation?.front_suggested_edit_prompt : generation?.close_up_suggested_edit_prompt) ||
+    (!bothViews ? generation?.suggested_edit_prompt : "") ||
+    "";
+  const mismatches =
+    (view === "front" ? generation?.front_mismatches : generation?.close_up_mismatches) ||
+    (!bothViews ? generation?.mismatches : []) ||
+    [];
+  const notes =
+    (view === "front" ? generation?.front_notes : generation?.close_up_notes) ||
+    (!bothViews ? generation?.notes : null);
+  const applied =
+    (view === "front" ? generation?.front_applied_edit_prompt : generation?.close_up_applied_edit_prompt) ||
+    (generation?.edited_view === view ? generation?.applied_edit_prompt : null) ||
+    (!bothViews ? generation?.applied_edit_prompt : null);
+  return { suggested, mismatches, notes: notes ?? null, applied: applied ?? null };
+}
+
+function ViewEditPanel({
+  view,
+  label,
+  suggested,
+  mismatches,
+  notes,
+  applied,
+  prompt,
+  onPromptChange,
+  onApply,
+  regenerating,
+  bothViews,
+  canApply,
+  remaining,
+}: {
+  view: ModelShootView;
+  label?: string;
+  suggested: string;
+  mismatches: string[];
+  notes: string | null;
+  applied: string | null;
+  prompt: string;
+  onPromptChange: (value: string) => void;
+  onApply: () => void;
+  regenerating: boolean;
+  bothViews: boolean;
+  canApply: boolean;
+  remaining: number;
+}) {
+  const tweakSummary = joinTweaks(mismatches);
+  const inputId = `model-edit-prompt-${view}`;
+  const applyLabel = bothViews
+    ? view === "front"
+      ? "Apply regular edit"
+      : "Apply close-up edit"
+    : "Apply this edit";
+  const name = viewLabel(view);
+  return (
+    <div className="space-y-3">
+      {label ? <p className="text-sm font-medium">{label}</p> : null}
+      {applied && (
+        <div className="rounded-md border bg-muted/30 p-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            {bothViews ? `This ${name} used your last edit` : "This look used your last edit"}
+          </p>
+          <p className="mt-1 text-sm">{applied}</p>
+        </div>
+      )}
+      {!canApply ? (
+        <p className="text-sm text-muted-foreground">
+          Both complementary edits on this {name} have been used.
+        </p>
+      ) : (
+        <>
+          {tweakSummary ? (
+            <p className="text-sm">
+              Suggested tweaks: {tweakSummary}.
+              {notes ? ` ${notes}` : ""}
+            </p>
+          ) : notes ? (
+            <p className="text-sm text-muted-foreground">{notes}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              If you’re not happy with this {bothViews ? name : "look"}, describe a change below.
+            </p>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor={inputId}>
+              {suggested ? "Suggested edit — change it if you want" : "Describe the change you want"}
+            </Label>
+            <Textarea
+              id={inputId}
+              value={prompt}
+              onChange={(e) => onPromptChange(e.target.value)}
+              placeholder="e.g. Scale the pendant down slightly and match the metal tone to the reference."
+              className="min-h-[104px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              {bothViews
+                ? `Applies only to the ${name} you’re seeing and saves that new image to this shoot.`
+                : "Applies to the look you’re viewing and saves the new version to this shoot."}
+              {remaining === 1
+                ? " 1 complementary edit left on this view."
+                : remaining < COMPLEMENTARY_EDITS_PER_VIEW
+                  ? ` ${remaining} complementary edits left on this view.`
+                  : ""}
+            </p>
+          </div>
+          <Button className="gap-2" disabled={!prompt.trim() || regenerating} onClick={onApply}>
+            <RefreshCw className="h-4 w-4" /> {applyLabel}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function TryOnResults({
   loading,
   results,
   onBack,
   token,
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
   draft,
   activeGeneration,
@@ -103,15 +228,20 @@ export default function TryOnResults({
   loadingTitle,
 }: TryOnResultsProps) {
   const { toast } = useToast();
-  const [editPrompt, setEditPrompt] = useState("");
+  const [frontPrompt, setFrontPrompt] = useState("");
+  const [closeUpPrompt, setCloseUpPrompt] = useState("");
 
   const activeUid = activeGeneration?.uid ?? null;
-  const suggestedPrompt = activeGeneration?.suggested_edit_prompt ?? "";
+  const hasFront = Boolean(results?.front && results.frontKey);
+  const hasCloseUp = Boolean(results?.closeUp && results.closeUpKey);
+  const bothViews = hasFront && hasCloseUp;
+  const frontEdit = viewEditState(activeGeneration, "front", bothViews);
+  const closeUpEdit = viewEditState(activeGeneration, "close_up", bothViews);
 
-  // Reset the editable prompt whenever a different look is in view.
   useEffect(() => {
-    setEditPrompt(suggestedPrompt);
-  }, [activeUid, suggestedPrompt]);
+    setFrontPrompt(frontEdit.suggested);
+    setCloseUpPrompt(closeUpEdit.suggested);
+  }, [activeUid, frontEdit.suggested, closeUpEdit.suggested]);
 
   const handleDownload = async (s3Key: string, filename: string) => {
     if (!token) return;
@@ -160,26 +290,26 @@ export default function TryOnResults({
   if (!results) return null;
 
   const generations = draft?.generations ?? [];
-  const total = draft?.max_generations ?? 0;
-  const includedEdits = complementaryEditsIncluded(total);
-  const editsLeft = complementaryEditsLeft(draft?.generations_used ?? generations.length, total);
+  const budget = modelShootViewBudget(draft);
   const activeIndex = generations.findIndex((gen) => gen.uid === activeUid);
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex >= 0 && activeIndex < generations.length - 1;
-  const mismatches = activeGeneration?.mismatches ?? [];
-  const tweakSummary = joinTweaks(mismatches);
-  const canRegenerate = Boolean(draft?.can_regenerate) && Boolean(onRegenerate);
+  const canRegenerate = budget.canRegenerate && Boolean(onRegenerate);
   const isSaved = Boolean(activeGeneration?.saved);
   const showPager = generations.length > 1;
 
   const imageItems: Array<{ label: string; url: string; s3Key: string; file: string }> = [
-    {
-      label: "Front View",
-      url: results.front,
-      s3Key: results.frontKey,
-      file: "tryon-front.png",
-    },
-    ...(results.closeUp && results.closeUpKey
+    ...(hasFront && results.front && results.frontKey
+      ? [
+          {
+            label: "Regular View",
+            url: results.front,
+            s3Key: results.frontKey,
+            file: "tryon-front.png",
+          },
+        ]
+      : []),
+    ...(hasCloseUp && results.closeUp && results.closeUpKey
       ? [
           {
             label: "Close-Up View",
@@ -236,7 +366,7 @@ export default function TryOnResults({
           </div>
         </CardHeader>
         <CardContent>
-          <div className={`grid gap-6 ${results.closeUp && results.closeUpKey ? "md:grid-cols-2" : "md:max-w-lg"}`}>
+          <div className={`grid gap-6 ${bothViews ? "md:grid-cols-2" : "md:max-w-lg"}`}>
             {imageItems.map((item) => (
               <div key={item.label} className="space-y-3">
                 <p className="text-sm font-medium text-muted-foreground">{item.label}</p>
@@ -252,15 +382,6 @@ export default function TryOnResults({
                         <Pencil className="h-4 w-4 text-foreground" />
                       </button>
                     )}
-                    {onChangeColour && (
-                      <button
-                        onClick={() => onChangeColour(item.s3Key, item.url)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change colour"
-                      >
-                        <Palette className="h-4 w-4 text-foreground" />
-                      </button>
-                    )}
                     {onManualPhotoEdit && (
                       <button
                         onClick={() => onManualPhotoEdit(item.s3Key, item.url)}
@@ -268,15 +389,6 @@ export default function TryOnResults({
                         title="Manual photo editing"
                       >
                         <SlidersHorizontal className="h-4 w-4 text-foreground" />
-                      </button>
-                    )}
-                    {onChangeLength && (
-                      <button
-                        onClick={() => onChangeLength(item.s3Key, item.url)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change length"
-                      >
-                        <Scissors className="h-4 w-4 text-foreground" />
                       </button>
                     )}
                   </div>
@@ -304,63 +416,80 @@ export default function TryOnResults({
             <CardTitle className="text-base">
               {canRegenerate ? "Want a change?" : "Edits used"}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{editsLeftLabel(editsLeft, includedEdits)}</p>
+            <p className="text-sm text-muted-foreground">
+              {modelShootEditsSummary({
+                views: resolveModelShootViews(draft.views, draft.generations),
+                frontRemaining: budget.frontRemaining,
+                closeUpRemaining: budget.closeUpRemaining,
+              })}
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {activeGeneration.applied_edit_prompt && (
-              <div className="rounded-md border bg-muted/30 p-3">
-                <p className="text-xs font-medium text-muted-foreground">This look used your last edit</p>
-                <p className="mt-1 text-sm">{activeGeneration.applied_edit_prompt}</p>
-              </div>
-            )}
-
             {canRegenerate ? (
-              <div className="space-y-3">
-                {tweakSummary ? (
-                  <p className="text-sm">
-                    Suggested tweaks: {tweakSummary}.
-                    {activeGeneration.notes ? ` ${activeGeneration.notes}` : ""}
-                  </p>
-                ) : activeGeneration.notes ? (
-                  <p className="text-sm text-muted-foreground">{activeGeneration.notes}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    If you’re not happy with this look, describe a change below.
-                  </p>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="edit-prompt">
-                    {suggestedPrompt ? "Suggested edit — change it if you want" : "Describe the change you want"}
-                  </Label>
-                  <Textarea
-                    id="edit-prompt"
-                    value={editPrompt}
-                    onChange={(e) => setEditPrompt(e.target.value)}
-                    placeholder="e.g. Scale the pendant down slightly and match the metal tone to the reference."
-                    className="min-h-[104px]"
+              <div className={bothViews ? "grid gap-6 md:grid-cols-2" : "space-y-3"}>
+                {hasFront ? (
+                  <ViewEditPanel
+                    view="front"
+                    label={bothViews ? "Regular view" : undefined}
+                    suggested={frontEdit.suggested}
+                    mismatches={frontEdit.mismatches}
+                    notes={frontEdit.notes}
+                    applied={frontEdit.applied}
+                    prompt={frontPrompt}
+                    onPromptChange={setFrontPrompt}
+                    onApply={() => onRegenerate?.(frontPrompt.trim(), "front")}
+                    regenerating={regenerating}
+                    bothViews={bothViews}
+                    canApply={budget.canRegenerateFront}
+                    remaining={budget.frontRemaining}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Applies to the look you’re viewing and saves the new version to this shoot.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    className="gap-2"
-                    disabled={!editPrompt.trim() || regenerating}
-                    onClick={() => onRegenerate?.(editPrompt.trim())}
-                  >
-                    <RefreshCw className="h-4 w-4" /> Apply this edit
-                  </Button>
-                  {onSaveGeneration && !isSaved && (
+                ) : null}
+                {hasCloseUp ? (
+                  <ViewEditPanel
+                    view="close_up"
+                    label={bothViews ? "Close-up view" : undefined}
+                    suggested={closeUpEdit.suggested}
+                    mismatches={closeUpEdit.mismatches}
+                    notes={closeUpEdit.notes}
+                    applied={closeUpEdit.applied}
+                    prompt={closeUpPrompt}
+                    onPromptChange={setCloseUpPrompt}
+                    onApply={() => onRegenerate?.(closeUpPrompt.trim(), "close_up")}
+                    regenerating={regenerating}
+                    bothViews={bothViews}
+                    canApply={budget.canRegenerateCloseUp}
+                    remaining={budget.closeUpRemaining}
+                  />
+                ) : null}
+                {onSaveGeneration && !isSaved && (
+                  <div className={bothViews ? "md:col-span-2" : undefined}>
                     <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>
                       {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                       Retry saving to gallery
                     </Button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
+                {frontEdit.applied || closeUpEdit.applied || activeGeneration.applied_edit_prompt ? (
+                  <div className="space-y-2">
+                    {frontEdit.applied && (
+                      <div className="rounded-md border bg-muted/30 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {bothViews ? "Regular view used this edit" : "This look used your last edit"}
+                        </p>
+                        <p className="mt-1 text-sm">{frontEdit.applied}</p>
+                      </div>
+                    )}
+                    {closeUpEdit.applied && (
+                      <div className="rounded-md border bg-muted/30 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Close-up view used this edit</p>
+                        <p className="mt-1 text-sm">{closeUpEdit.applied}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 <p className="text-sm text-muted-foreground">Start a new shoot if you want another change.</p>
                 {onSaveGeneration && !isSaved && (
                   <Button variant="outline" className="gap-2" disabled={saving} onClick={onSaveGeneration}>

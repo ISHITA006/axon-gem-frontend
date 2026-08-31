@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, type ColumnDef, type PaginationState, useReactTable } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Scissors, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiDeleteGalleryItem,
@@ -34,19 +34,16 @@ import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
-const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "modified-product", "edited-image", "deleted-catalogue"];
+const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "edited-image", "deleted-catalogue"];
 const GALLERY_CATEGORY_LABELS: Record<GalleryCategory, string> = {
   "model-shoot": "Model Shoot",
   "product-shoot": "Product Shoot",
-  "modified-product": "Modified Product Images",
   "edited-image": "Edited Images",
   "deleted-catalogue": "Deleted Catalogue Items",
 };
 
 interface MyGalleryProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   /** Opens Model Try On with this image as the jewellery piece (presigned URL resolved here). */
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
@@ -155,8 +152,6 @@ function GalleryImageCell({
 
 export default function MyGallery({
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
   onOpenTryOnWithJewellery,
 }: MyGalleryProps) {
@@ -257,23 +252,6 @@ export default function MyGallery({
     }
   };
 
-  const handleChangeLength = async (s3Key: string) => {
-    if (!token || !onChangeLength) return;
-    setActionKey(`length:${s3Key}`);
-    try {
-      const url = await getPresignedUrl(token, s3Key);
-      onChangeLength(s3Key, url);
-    } catch (err: unknown) {
-      toast({
-        title: "Open length tool failed",
-        description: err instanceof Error ? err.message : "Unable to open product length tool",
-        variant: "destructive",
-      });
-    } finally {
-      setActionKey(null);
-    }
-  };
-
   const openTryOnWithJewelleryFromKey = useCallback(
     async (s3Key: string) => {  
       if (!token || !onOpenTryOnWithJewellery) return;
@@ -353,9 +331,8 @@ export default function MyGallery({
           const rowDeleting = galleryDeleting && deleteTarget?.uid === uid;
           const downloading = Boolean(selectedKey && actionKey === `download:${selectedKey}`);
           const editing = Boolean(selectedKey && actionKey === `edit:${selectedKey}`);
-          const changingLength = Boolean(selectedKey && actionKey === `length:${selectedKey}`);
           const openingTryOn = Boolean(selectedKey && actionKey === `tryon:${selectedKey}`);
-          const disabled = downloading || editing || changingLength || openingTryOn || galleryDeleting;
+          const disabled = downloading || editing || openingTryOn || galleryDeleting;
           const showTryOn = Boolean(onOpenTryOnWithJewellery && selectedKey);
           return (
             <div className="flex max-w-[220px] flex-wrap items-center gap-1.5 md:max-w-none md:gap-2">
@@ -384,18 +361,6 @@ export default function MyGallery({
                     }}
                   >
                     {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={disabled}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleChangeLength(selectedKey);
-                    }}
-                  >
-                    {changingLength ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
                   </Button>
                   {showTryOn ? (
                     <Button
@@ -487,8 +452,6 @@ export default function MyGallery({
           onBack={closeResume}
           backLabel="Back to gallery"
           onEditImage={onEditImage}
-          onChangeColour={onChangeColour}
-          onChangeLength={onChangeLength}
           onManualPhotoEdit={onManualPhotoEdit}
         />
       );
@@ -500,8 +463,6 @@ export default function MyGallery({
         onBack={closeResume}
         backLabel="Back to gallery"
         onEditImage={onEditImage}
-        onChangeColour={onChangeColour}
-        onChangeLength={onChangeLength}
         onManualPhotoEdit={onManualPhotoEdit}
       />
     );
@@ -515,8 +476,6 @@ export default function MyGallery({
         categoryTitle={GALLERY_CATEGORY_LABELS[selectedItem.category as GalleryCategory] ?? selectedItem.category}
         onBack={() => setSelectedItem(null)}
         onEditImage={onEditImage}
-        onChangeLength={onChangeLength}
-        onChangeColour={onChangeColour}
         onManualPhotoEdit={onManualPhotoEdit}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
       />

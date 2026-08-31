@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
-import { Palette, Scissors, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
@@ -15,9 +15,7 @@ import ManageProductSideAngles from "@/components/ManageProductSideAngles";
 import ManageModelPoses from "@/components/ManageModelPoses";
 import ManageBackgrounds from "@/components/ManageBackgrounds";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
-import ChangeProductColour from "@/components/ChangeProductColour";
 import ManualPhotoEditor, { ManualEditTool } from "@/components/ManualPhotoEditor";
-import ChangeProductLength from "@/components/ChangeProductLength";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
 import ManageCatalogue from "@/components/ManageCatalogue";
 import EditImage from "@/components/EditImage";
@@ -27,20 +25,13 @@ import GenerationUsage from "@/components/GenerationUsage";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
-  const [changeColourImage, setChangeColourImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [manualEditImage, setManualEditImage] = useState<{
     s3Key: string;
     imageUrl: string;
     initialTool?: ManualEditTool;
   } | null>(null);
-  const [changeLengthImage, setChangeLengthImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [tryOnJewellery, setTryOnJewellery] = useState<{ s3Key: string; imageUrl?: string } | null>(null);
-
-  const handleChangeColour = (s3Key: string, imageUrl: string) => {
-    setChangeColourImage({ s3Key, imageUrl });
-    setActiveTab("colour");
-  };
 
   const handleManualPhotoEdit = (
     s3Key: string,
@@ -54,11 +45,6 @@ export default function Index() {
   const handleEditImage = (s3Key: string, imageUrl: string) => {
     setEditImage({ s3Key, imageUrl });
     setActiveTab("editImage");
-  };
-
-  const handleChangeLength = (s3Key: string, imageUrl: string) => {
-    setChangeLengthImage({ s3Key, imageUrl });
-    setActiveTab("length");
   };
 
   const handleOpenTryOnWithJewellery = (s3Key: string, imageUrl: string) => {
@@ -88,30 +74,8 @@ export default function Index() {
                 s3Key={tryOnJewellery?.s3Key}
                 imageUrl={tryOnJewellery?.imageUrl}
                 onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
                 onManualPhotoEdit={handleManualPhotoEdit}
               />
-            )}
-
-            {activeTab === "colour" && (
-              changeColourImage ? (
-                <ChangeProductColour
-                  s3Key={changeColourImage.s3Key}
-                  imageUrl={changeColourImage.imageUrl}
-                  onBack={() => setChangeColourImage(null)}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-20">
-                    <Palette className="mb-4 h-16 w-16 text-muted-foreground/40" />
-                    <h2 className="text-xl font-semibold">Change Product Colour</h2>
-                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the edit (palette) button on a model shoot image to change its colour.
-                    </p>
-                  </CardContent>
-                </Card>
-              )
             )}
 
             {activeTab === "manualPhotoEdit" && (
@@ -136,32 +100,10 @@ export default function Index() {
               )
             )}
 
-            {activeTab === "length" && (
-              changeLengthImage ? (
-                <ChangeProductLength
-                  s3Key={changeLengthImage.s3Key}
-                  imageUrl={changeLengthImage.imageUrl}
-                  onBack={() => setChangeLengthImage(null)}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-20">
-                    <Scissors className="mb-4 h-16 w-16 text-muted-foreground/40" />
-                    <h2 className="text-xl font-semibold">Change Product Length</h2>
-                    <p className="mt-2 text-muted-foreground text-center max-w-sm">
-                      Go to My Gallery and click the scissors button on a model shoot image to adjust its chain length or overall size.
-                    </p>
-                  </CardContent>
-                </Card>
-              )
-            )}
-
             {activeTab === "generationUsage" && <GenerationUsage />}
             {activeTab === "gallery" && (
               <MyGallery
                 onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
                 onManualPhotoEdit={handleManualPhotoEdit}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
@@ -169,16 +111,12 @@ export default function Index() {
             {activeTab === "catalogue" && (
               <ManageCatalogue
                 onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
                 onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}
             {activeTab === "uploadStudioShoot" && (
               <UploadStudioShoot
                 onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
                 onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}
@@ -189,8 +127,6 @@ export default function Index() {
                 imageUrl={editImage?.imageUrl ?? null}
                 sourceImageS3Key={editImage?.s3Key ?? null}
                 onEditImage={handleEditImage}
-                onChangeColour={handleChangeColour}
-                onChangeLength={handleChangeLength}
                 onManualPhotoEdit={handleManualPhotoEdit}
               />
             )}

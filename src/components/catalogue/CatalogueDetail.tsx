@@ -60,8 +60,6 @@ export function CatalogueDetail({
   onUploadFiles,
   onRemoveImageKey,
   onFormChange,
-  onChangeProductColour,
-  onChangeProductLength,
   onManualPhotoEdit,
   onEditImage,
 }: {
@@ -86,8 +84,6 @@ export function CatalogueDetail({
   onUploadFiles: (files: FileList | null) => void;
   onRemoveImageKey: (key: string) => void;
   onFormChange: (next: CatalogueEditForm) => void;
-  onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
 }) {
@@ -217,8 +213,6 @@ export function CatalogueDetail({
             title={`${item.name ?? "Catalogue item"}`}
             s3Keys={imageKeys}
             startIndex={carouselStartIndex}
-            onChangeProductColour={onChangeProductColour}
-            onChangeProductLength={onChangeProductLength}
             onManualPhotoEdit={onManualPhotoEdit}
             onEditImage={onEditImage}
           />

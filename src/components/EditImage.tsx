@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, ImageIcon, Loader2, Palette, Pencil, Scissors, SlidersHorizontal, Wand2, X } from "lucide-react";
+import { Download, ImageIcon, Loader2, Pencil, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiEditImageWithInstructions, downloadImage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,6 @@ type EditImageProps = {
    */
   sourceImageS3Key?: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
-  onChangeColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
 };
 
@@ -40,8 +38,6 @@ export default function EditImage({
   imageUrl,
   sourceImageS3Key,
   onEditImage,
-  onChangeColour,
-  onChangeLength,
   onManualPhotoEdit,
 }: EditImageProps) {
   const { token } = useAuth();
@@ -373,7 +369,7 @@ export default function EditImage({
                   alt="Edited result"
                   className="mx-auto max-h-[min(70vh,32rem)] w-full rounded-lg border object-contain shadow-sm"
                 />
-                {(onEditImage || onChangeLength || onChangeColour || onManualPhotoEdit) && resultS3Key ? (
+                {(onEditImage || onManualPhotoEdit) && resultS3Key ? (
                   <div className="absolute right-2 top-2 flex items-center gap-2">
                     {onEditImage ? (
                       <button
@@ -385,16 +381,6 @@ export default function EditImage({
                         <Pencil className="h-4 w-4 text-foreground" />
                       </button>
                     ) : null}
-                    {onChangeColour ? (
-                      <button
-                        type="button"
-                        onClick={() => onChangeColour(resultS3Key, resultUrl)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change colour"
-                      >
-                        <Palette className="h-4 w-4 text-foreground" />
-                      </button>
-                    ) : null}
                     {onManualPhotoEdit ? (
                       <button
                         type="button"
@@ -403,16 +389,6 @@ export default function EditImage({
                         title="Manual photo editing"
                       >
                         <SlidersHorizontal className="h-4 w-4 text-foreground" />
-                      </button>
-                    ) : null}
-                    {onChangeLength ? (
-                      <button
-                        type="button"
-                        onClick={() => onChangeLength(resultS3Key, resultUrl)}
-                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
-                        title="Change length"
-                      >
-                        <Scissors className="h-4 w-4 text-foreground" />
                       </button>
                     ) : null}
                   </div>

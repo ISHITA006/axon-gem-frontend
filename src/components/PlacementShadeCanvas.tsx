@@ -16,12 +16,13 @@ export type PlacementShadeCanvasHandle = {
 
 interface PlacementShadeCanvasProps {
   imageUrl: string;
+  imageAlt?: string;
   disabled?: boolean;
   onPaintChange?: (hasPaint: boolean) => void;
 }
 
 const PlacementShadeCanvas = forwardRef<PlacementShadeCanvasHandle, PlacementShadeCanvasProps>(
-  function PlacementShadeCanvas({ imageUrl, disabled = false, onPaintChange }, ref) {
+  function PlacementShadeCanvas({ imageUrl, imageAlt, disabled = false, onPaintChange }, ref) {
     const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -215,7 +216,7 @@ const PlacementShadeCanvas = forwardRef<PlacementShadeCanvasHandle, PlacementSha
           <div className="relative inline-block max-h-[60vh] max-w-full">
             <img
               src={imageUrl}
-              alt="Model for jewellery placement"
+              alt={imageAlt ?? "Model for jewellery placement"}
               className="block max-h-[60vh] max-w-full select-none"
               onLoad={(e) => {
                 const img = e.currentTarget;

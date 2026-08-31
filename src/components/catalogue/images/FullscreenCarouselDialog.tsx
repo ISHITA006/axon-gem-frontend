@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Palette, Pencil, Scissors, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, SlidersHorizontal } from "lucide-react";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -16,8 +16,6 @@ export function FullscreenCarouselDialog({
   s3Keys,
   captions,
   startIndex,
-  onChangeProductColour,
-  onChangeProductLength,
   onManualPhotoEdit,
   onEditImage,
   onOpenTryOnWithJewellery,
@@ -29,8 +27,6 @@ export function FullscreenCarouselDialog({
   s3Keys: string[];
   captions?: Record<string, string>;
   startIndex: number;
-  onChangeProductColour?: (s3Key: string, imageUrl: string) => void;
-  onChangeProductLength?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
@@ -129,22 +125,6 @@ export function FullscreenCarouselDialog({
               variant="ghost"
               size="sm"
               onClick={() => {
-                if (currentKey && urlQuery.data && onChangeProductColour) {
-                  onChangeProductColour(currentKey, urlQuery.data);
-                }
-              }}
-              className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-              title="Change colour"
-              disabled={!currentKey || !urlQuery.data || !onChangeProductColour}
-            >
-              <Palette className="h-4 w-4 text-foreground" />
-              <span className="text-xs font-medium text-foreground">Change colour</span>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
                 if (currentKey && urlQuery.data && onManualPhotoEdit) {
                   onManualPhotoEdit(currentKey, urlQuery.data);
                 }
@@ -155,22 +135,6 @@ export function FullscreenCarouselDialog({
             >
               <SlidersHorizontal className="h-4 w-4 text-foreground" />
               <span className="text-xs font-medium text-foreground">Manual edit</span>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (currentKey && urlQuery.data && onChangeProductLength) {
-                  onChangeProductLength(currentKey, urlQuery.data);
-                }
-              }}
-              className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-              title="Change length"
-              disabled={!currentKey || !urlQuery.data || !onChangeProductLength}
-            >
-              <Scissors className="h-4 w-4 text-foreground" />
-              <span className="text-xs font-medium text-foreground">Change length</span>
             </Button>
             <Button
               type="button"
@@ -188,7 +152,7 @@ export function FullscreenCarouselDialog({
               <Pencil className="h-4 w-4 text-foreground" />
               <span className="text-xs font-medium text-foreground">Edit image</span>
             </Button>
-            {(title === "Modified Product Images" || title === "Edited Images") && <Button
+            {title === "Edited Images" && <Button
               type="button"
               variant="ghost"
               size="sm"
