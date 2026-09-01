@@ -1782,7 +1782,10 @@ export async function apiChangeMetalColour(
   targetColourHex: string,
   sourceColourHex?: string,
   hueTolerance?: number,
-  options?: { saveToGallery?: boolean }
+  options?: {
+    saveToGallery?: boolean;
+    region?: { x: number; y: number; width: number; height: number };
+  }
 ): Promise<{ detail: string; s3_key: string; url: string }> {
   // Backend accepts a preset name or a bare 6-digit hex (e.g. "#B76E79").
   const params = new URLSearchParams({
@@ -1796,6 +1799,12 @@ export async function apiChangeMetalColour(
   if (hueTolerance !== undefined) params.set("hue_tolerance", String(hueTolerance));
   if (options?.saveToGallery !== undefined) {
     params.set("save_to_gallery", String(options.saveToGallery));
+  }
+  if (options?.region) {
+    params.set("region_x", String(options.region.x));
+    params.set("region_y", String(options.region.y));
+    params.set("region_width", String(options.region.width));
+    params.set("region_height", String(options.region.height));
   }
   const res = await fetch(`${API_BASE_URL}/change-metal-colour?${params.toString()}`, {
     method: "POST",

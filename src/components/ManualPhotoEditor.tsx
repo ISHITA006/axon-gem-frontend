@@ -4,6 +4,7 @@ import {
   Brush,
   CloudFog,
   Coins,
+  Crop,
   Download,
   Eraser,
   Eye,
@@ -138,6 +139,33 @@ function sampleNeighborhood(
 
 type EyeDropperCtor = new () => { open: () => Promise<{ sRGBHex: string }> };
 
+type NormRect = { x: number; y: number; width: number; height: number };
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
+}
+
+function clientToNorm(
+  img: HTMLImageElement,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } | null {
+  const rect = img.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return {
+    x: clamp01((clientX - rect.left) / rect.width),
+    y: clamp01((clientY - rect.top) / rect.height),
+  };
+}
+
+function rectFromPoints(a: { x: number; y: number }, b: { x: number; y: number }): NormRect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) };
+}
+
+const MIN_JEWELLERY_REGION = 0.02;
+
 export default function ManualPhotoEditor({
   s3Key,
   imageUrl,
@@ -175,6 +203,10 @@ export default function ManualPhotoEditor({
   const [hoverSample, setHoverSample] = useState<{ hex: string; left: number; top: number } | null>(
     null
   );
+  const [selectingJewelleryArea, setSelectingJewelleryArea] = useState(false);
+  const [jewelleryRegion, setJewelleryRegion] = useState<NormRect | null>(null);
+  const [jewelleryDrag, setJewelleryDrag] = useState<NormRect | null>(null);
+  const jewelleryDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const previewImgRef = useRef<HTMLImageElement | null>(null);
   const sampleCacheRef = useRef<{ url: string; canvas: HTMLCanvasElement } | null>(null);
   const pickingActiveRef = useRef(false);
@@ -216,6 +248,10 @@ export default function ManualPhotoEditor({
     setPreviewKey((k) => k + 1);
     setPickingSource(false);
     setHoverSample(null);
+    setSelectingJewelleryArea(false);
+    setJewelleryRegion(null);
+    setJewelleryDrag(null);
+    jewelleryDragStartRef.current = null;
   }, [s3Key, imageUrl, initialTool]);
 
   const fetchBgName = useCallback(
@@ -350,6 +386,58 @@ export default function ManualPhotoEditor({
     [toast]
   );
 
+  const toggleSelectingJewelleryArea = () => {
+    pickingActiveRef.current = false;
+    setPickingSource(false);
+    setHoverSample(null);
+    setSelectingJewelleryArea((v) => !v);
+    setJewelleryDrag(null);
+    jewelleryDragStartRef.current = null;
+  };
+
+  const onJewelleryRegionPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const img = previewImgRef.current;
+    if (!img) return;
+    const start = clientToNorm(img, event.clientX, event.clientY);
+    if (!start) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    jewelleryDragStartRef.current = start;
+    setJewelleryDrag({ x: start.x, y: start.y, width: 0, height: 0 });
+  };
+
+  const onJewelleryRegionPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = jewelleryDragStartRef.current;
+    const img = previewImgRef.current;
+    if (!start || !img) return;
+    const now = clientToNorm(img, event.clientX, event.clientY);
+    if (!now) return;
+    setJewelleryDrag(rectFromPoints(start, now));
+  };
+
+  const onJewelleryRegionPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const start = jewelleryDragStartRef.current;
+    const img = previewImgRef.current;
+    jewelleryDragStartRef.current = null;
+    setJewelleryDrag(null);
+    if (!start || !img) return;
+    const now = clientToNorm(img, event.clientX, event.clientY);
+    if (!now) return;
+    const draft = rectFromPoints(start, now);
+    if (draft.width >= MIN_JEWELLERY_REGION && draft.height >= MIN_JEWELLERY_REGION) {
+      setJewelleryRegion(draft);
+      setSelectingJewelleryArea(false);
+    } else if (draft.width > 0.002 || draft.height > 0.002) {
+      toast({
+        title: "Box too small",
+        description: "Drag a larger box around the jewellery.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const startPickingFromPhoto = async () => {
     if (pickingSource || pickingLoading) {
       pickingActiveRef.current = false;
@@ -358,6 +446,9 @@ export default function ManualPhotoEditor({
       setHoverSample(null);
       return;
     }
+    setSelectingJewelleryArea(false);
+    setJewelleryDrag(null);
+    jewelleryDragStartRef.current = null;
     pickingActiveRef.current = true;
     setPickingLoading(true);
     try {
@@ -387,17 +478,19 @@ export default function ManualPhotoEditor({
   };
 
   useEffect(() => {
-    if (!pickingSource) return;
+    if (!pickingSource && !selectingJewelleryArea) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        pickingActiveRef.current = false;
-        setPickingSource(false);
-        setHoverSample(null);
-      }
+      if (event.key !== "Escape") return;
+      pickingActiveRef.current = false;
+      setPickingSource(false);
+      setHoverSample(null);
+      setSelectingJewelleryArea(false);
+      setJewelleryDrag(null);
+      jewelleryDragStartRef.current = null;
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pickingSource]);
+  }, [pickingSource, selectingJewelleryArea]);
 
   useEffect(() => {
     if (!pickingSource) {
@@ -606,7 +699,10 @@ export default function ManualPhotoEditor({
         `#${cleanMetalHex.toUpperCase()}`,
         cleanMetalSource.length === 6 ? `#${cleanMetalSource.toUpperCase()}` : undefined,
         hueTolerance,
-        { saveToGallery: false }
+        {
+          saveToGallery: false,
+          region: jewelleryRegion ?? undefined,
+        }
       );
       await applyWorkingResult(res.s3_key);
       toast({ title: "Applied", description: "Metal colour updated. Continue editing or Save." });
@@ -865,6 +961,26 @@ export default function ManualPhotoEditor({
                   }}
                   draggable={false}
                 />
+                {tool === "metal" && !showOriginal && (jewelleryRegion || jewelleryDrag) && (
+                  <div
+                    className="pointer-events-none absolute z-[5] border-2 border-primary bg-primary/15"
+                    style={{
+                      left: `${((jewelleryDrag ?? jewelleryRegion)?.x ?? 0) * 100}%`,
+                      top: `${((jewelleryDrag ?? jewelleryRegion)?.y ?? 0) * 100}%`,
+                      width: `${((jewelleryDrag ?? jewelleryRegion)?.width ?? 0) * 100}%`,
+                      height: `${((jewelleryDrag ?? jewelleryRegion)?.height ?? 0) * 100}%`,
+                    }}
+                  />
+                )}
+                {tool === "metal" && selectingJewelleryArea && !pickingSource && !showOriginal && (
+                  <div
+                    className="absolute inset-0 z-10 cursor-crosshair touch-none"
+                    onPointerDown={onJewelleryRegionPointerDown}
+                    onPointerMove={onJewelleryRegionPointerMove}
+                    onPointerUp={onJewelleryRegionPointerUp}
+                    onPointerCancel={onJewelleryRegionPointerUp}
+                  />
+                )}
                 {tool === "metal" && pickingSource && (
                   <div
                     className="absolute inset-0 z-10 cursor-crosshair touch-none"
@@ -930,6 +1046,12 @@ export default function ManualPhotoEditor({
                 Click the metal on the photo to sample its colour. Press Esc to cancel.
               </p>
             )}
+            {selectingJewelleryArea && tool === "metal" && !pickingSource && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Drag a box around the jewellery. Skin and clothing outside it stay unchanged.
+                Press Esc to cancel.
+              </p>
+            )}
             {showOriginal && !pickingSource && (
               <p className="mt-2 text-sm text-muted-foreground">
                 Viewing the original. Toggle back to continue editing the latest result.
@@ -957,6 +1079,9 @@ export default function ManualPhotoEditor({
                 pickingActiveRef.current = false;
                 setPickingSource(false);
                 setHoverSample(null);
+                setSelectingJewelleryArea(false);
+                setJewelleryDrag(null);
+                jewelleryDragStartRef.current = null;
                 if (isBrushTool(next)) {
                   setImageReady(false);
                   setPreviewKey((k) => k + 1);
@@ -1042,8 +1167,53 @@ export default function ManualPhotoEditor({
               <TabsContent value="metal" className="space-y-4 pt-2">
                 <p className="text-sm text-muted-foreground">
                   Recolour any metallic base — yellow gold, rose gold, silver, gun metal,
-                  platinum, white gold, copper — without changing stones or lighting.
+                  platinum, white gold, copper — without changing stones or lighting. On
+                  model shots, draw a box around the jewellery first so skin and clothing
+                  are left unchanged.
                 </p>
+                <div className="space-y-2">
+                  <Label>Jewellery area (model shots)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Product stills can skip this. For a model photo, box just the necklace,
+                    earring, or ring before applying.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={selectingJewelleryArea ? "default" : "outline"}
+                      className="gap-2"
+                      onClick={toggleSelectingJewelleryArea}
+                      disabled={showOriginal}
+                    >
+                      <Crop className="h-4 w-4" />
+                      {selectingJewelleryArea
+                        ? "Drag on the photo…"
+                        : jewelleryRegion
+                          ? "Redraw jewellery area"
+                          : "Select jewellery area"}
+                    </Button>
+                    {jewelleryRegion && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setJewelleryRegion(null);
+                          setJewelleryDrag(null);
+                          jewelleryDragStartRef.current = null;
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  {jewelleryRegion && !selectingJewelleryArea && (
+                    <p className="text-xs text-muted-foreground">
+                      Metal colour will only change inside the box.
+                    </p>
+                  )}
+                </div>
                 <div className="space-y-3">
                   <Label>New metal colour</Label>
                   <div className="flex flex-wrap items-center gap-2">
