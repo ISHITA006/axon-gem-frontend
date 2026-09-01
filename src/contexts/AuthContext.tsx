@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { apiWarmup } from "@/lib/api";
 
 interface AuthContextType {
   token: string | null;
@@ -21,6 +22,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("auth_token");
     setToken(null);
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    // Holds the Cloud Run request open so CPU stays allocated while BiRefNet
+    // loads from disk. Must not be a fire-and-forget after the response —
+    // request-based billing throttles CPU between requests.
+    void apiWarmup(token).catch(() => undefined);
+  }, [token]);
 
   return (
     <AuthContext.Provider value={{ token, isAuthenticated: !!token, login, logout }}>

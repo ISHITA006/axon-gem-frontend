@@ -34,6 +34,20 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
   if (!res.ok) throw new Error(await parseApiErrorMessage(res, fallback));
 }
 
+export async function apiWakeServer(): Promise<void> {
+  await fetch(`${API_BASE_URL}/health`).catch(() => undefined);
+}
+
+export async function apiWarmup(
+  token: string
+): Promise<{ ready: boolean; status?: string }> {
+  const res = await fetch(`${API_BASE_URL}/warmup`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to warm up editor");
+  return res.json();
+}
+
 export async function apiLogin(username: string, password: string) {
   const formData = new URLSearchParams();
   formData.append("username", username);

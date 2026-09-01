@@ -28,6 +28,7 @@ import {
   apiChangeMetalColour,
   apiGetColourName,
   apiSaveEditedImage,
+  apiWarmup,
   downloadImage,
   getPresignedUrl,
 } from "@/lib/api";
@@ -180,9 +181,11 @@ export default function ManualPhotoEditor({
   const [tool, setTool] = useState<ManualEditTool>(initialTool);
   const [workingS3Key, setWorkingS3Key] = useState(s3Key);
   const [workingUrl, setWorkingUrl] = useState(imageUrl);
+  const [savedS3Key, setSavedS3Key] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [warming, setWarming] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editCount, setEditCount] = useState(0);
@@ -242,6 +245,7 @@ export default function ManualPhotoEditor({
     setWorkingUrl(imageUrl);
     setDirty(false);
     setSaved(false);
+    setSavedS3Key(null);
     setEditCount(0);
     setShowOriginal(false);
     setTool(initialTool);
@@ -253,6 +257,23 @@ export default function ManualPhotoEditor({
     setJewelleryDrag(null);
     jewelleryDragStartRef.current = null;
   }, [s3Key, imageUrl, initialTool]);
+
+  useEffect(() => {
+    if (!token) {
+      setWarming(false);
+      return;
+    }
+    let cancelled = false;
+    setWarming(true);
+    void apiWarmup(token)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setWarming(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const fetchBgName = useCallback(
     async (value: string) => {
@@ -326,7 +347,7 @@ export default function ManualPhotoEditor({
       });
 
     try {
-      return drawFromImage(await loadImage(url, true));
+      return drawFromImage(await loadImage(url, !url.startsWith("data:")));
     } catch {
       if (!token) throw new Error("Could not load image for colour picking");
       const key = showOriginal ? s3Key : workingS3Key;
@@ -502,10 +523,12 @@ export default function ManualPhotoEditor({
     });
   }, [pickingSource, displayUrl, prepareSampleCanvas]);
 
-  const applyWorkingResult = async (resS3Key: string) => {
+  const applyWorkingResult = async (res: { s3_key: string; url: string }) => {
     if (!token) return;
-    const displayUrlNext = await getPresignedUrl(token, resS3Key);
-    setWorkingS3Key(resS3Key);
+    const displayUrlNext =
+      res.url ||
+      (await getPresignedUrl(token, res.s3_key));
+    setWorkingS3Key(res.s3_key);
     setWorkingUrl(displayUrlNext);
     setDirty(true);
     setSaved(false);
@@ -669,7 +692,7 @@ export default function ManualPhotoEditor({
         `#${cleanBgHex.toUpperCase()}`,
         { saveToGallery: false }
       );
-      await applyWorkingResult(res.s3_key);
+      await applyWorkingResult(res);
       toast({ title: "Applied", description: "Background updated. Continue editing or Save." });
     } catch (err: unknown) {
       toast({
@@ -704,7 +727,7 @@ export default function ManualPhotoEditor({
           region: jewelleryRegion ?? undefined,
         }
       );
-      await applyWorkingResult(res.s3_key);
+      await applyWorkingResult(res);
       toast({ title: "Applied", description: "Metal colour updated. Continue editing or Save." });
     } catch (err: unknown) {
       toast({
@@ -735,7 +758,7 @@ export default function ManualPhotoEditor({
         darkRatio,
         saveToGallery: false,
       });
-      await applyWorkingResult(res.s3_key);
+      await applyWorkingResult(res);
       toast({ title: "Applied", description: "Metal patches merged. Continue editing or Save." });
     } catch (err: unknown) {
       toast({
@@ -766,7 +789,7 @@ export default function ManualPhotoEditor({
         darkRatio: shadowDarkRatio,
         saveToGallery: false,
       });
-      await applyWorkingResult(res.s3_key);
+      await applyWorkingResult(res);
       toast({
         title: "Applied",
         description: "Surface shadows softened. Continue editing or Save.",
@@ -786,7 +809,8 @@ export default function ManualPhotoEditor({
     if (!token || !dirty) return;
     setSaving(true);
     try {
-      await apiSaveEditedImage(token, workingS3Key);
+      const res = await apiSaveEditedImage(token, workingS3Key);
+      setSavedS3Key(res.s3_key);
       setDirty(false);
       setSaved(true);
       toast({ title: "Saved", description: "Added to Edited Images in My Gallery." });
@@ -858,6 +882,23 @@ export default function ManualPhotoEditor({
     setIsPointerDown(false);
     lastPointRef.current = null;
   };
+
+  if (warming) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+        <div className="relative">
+          <div className="h-20 w-20 rounded-full border-4 border-muted" />
+          <Loader2 className="absolute inset-0 h-20 w-20 animate-spin text-primary" />
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-semibold">Preparing editor…</h2>
+          <p className="text-sm text-muted-foreground">
+            Loading the retouch model after server start. This is not an edit — apply will be faster once this finishes.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (generating) {
     return (
@@ -931,7 +972,7 @@ export default function ManualPhotoEditor({
             <AddToCataloguePanel
               token={token}
               analysis={null}
-              images={[{ url: workingUrl, s3Key: workingS3Key }]}
+              images={[{ url: workingUrl, s3Key: savedS3Key || workingS3Key }]}
             />
           )}
         </div>
