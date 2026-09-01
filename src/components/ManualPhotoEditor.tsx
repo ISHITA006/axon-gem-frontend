@@ -70,9 +70,9 @@ const METAL_PRESETS: { hex: string; label: string }[] = [
 ];
 
 const TOLERANCE_OPTIONS: { value: number; label: string; hint: string }[] = [
-  { value: 6, label: "Strict", hint: "Only near-exact metal tones" },
-  { value: 12, label: "Balanced", hint: "Default — normal lighting variation" },
-  { value: 24, label: "Broad", hint: "Catches strongly colour-shifted metal" },
+  { value: 6, label: "Strict", hint: "Only near-exact metal tones — protects nearby stones" },
+  { value: 12, label: "Balanced", hint: "Default — normal lighting variation on any metal" },
+  { value: 24, label: "Broad", hint: "Catches colour-shifted or oxidised metal" },
 ];
 
 const METAL_OVERLAY_STROKE = "rgba(34, 197, 94, 0.55)";
@@ -784,6 +784,10 @@ export default function ManualPhotoEditor({
               </TabsContent>
 
               <TabsContent value="metal" className="space-y-4 pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Recolour any metallic base — yellow gold, rose gold, silver, gun metal,
+                  platinum, white gold, copper — without changing stones or lighting.
+                </p>
                 <div className="space-y-3">
                   <Label>New metal colour</Label>
                   <div className="flex flex-wrap items-center gap-2">
@@ -837,6 +841,38 @@ export default function ManualPhotoEditor({
                 </div>
                 <div className="space-y-2">
                   <Label>Metal to change (optional)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-detects gold and gray metals. Pin a swatch for two-tone pieces
+                    (for example change only the silver, or only the gun metal).
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMetalSourceHex("")}
+                      title="Auto-detect the current metal"
+                      className={`h-8 rounded-full border px-3 text-xs font-medium shadow-sm transition-transform hover:scale-105 ${
+                        cleanMetalSource.length === 0
+                          ? "ring-2 ring-primary ring-offset-2"
+                          : "bg-background"
+                      }`}
+                    >
+                      Auto
+                    </button>
+                    {METAL_PRESETS.map((preset) => (
+                      <button
+                        key={`src-${preset.hex}`}
+                        type="button"
+                        onClick={() => setMetalSourceHex(preset.hex)}
+                        title={`${preset.label} (${preset.hex})`}
+                        className={`h-8 w-8 rounded-full border shadow-sm transition-transform hover:scale-110 ${
+                          metalSourceHex.toUpperCase() === preset.hex
+                            ? "ring-2 ring-primary ring-offset-2"
+                            : ""
+                        }`}
+                        style={{ backgroundColor: preset.hex }}
+                      />
+                    ))}
+                  </div>
                   <Input
                     placeholder="Auto-detect"
                     value={metalSourceHex}

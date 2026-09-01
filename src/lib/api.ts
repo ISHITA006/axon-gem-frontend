@@ -1790,8 +1790,9 @@ export async function apiChangeMetalColour(
     target_colour: targetColourHex,
   });
   if (sourceColourHex) params.set("source_colour", sourceColourHex);
-  // Degrees (3-60); how far a hue may drift from the metal and still be
-  // recoloured. Smaller protects stones whose colour is close to the metal's.
+  // Degrees (3-60); how broadly to match the current metal. For gold-family
+  // metals this is hue; for silver / gun metal / platinum it widens the
+  // gray-metal chroma window. Smaller protects nearby stones.
   if (hueTolerance !== undefined) params.set("hue_tolerance", String(hueTolerance));
   if (options?.saveToGallery !== undefined) {
     params.set("save_to_gallery", String(options.saveToGallery));
