@@ -10,6 +10,7 @@ import {
   EyeOff,
   Loader2,
   PaintBucket,
+  Pipette,
   RotateCcw,
   Save,
 } from "lucide-react";
@@ -84,6 +85,59 @@ function normalizeHex(value: string): string {
   return m[1].length === 6 ? `#${m[1]}` : value.trim().startsWith("#") ? `#${m[1]}` : m[1];
 }
 
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b]
+    .map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase()}`;
+}
+
+function sampleNeighborhood(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number
+): { r: number; g: number; b: number } | null {
+  const x0 = Math.max(0, Math.round(cx) - radius);
+  const y0 = Math.max(0, Math.round(cy) - radius);
+  const x1 = Math.min(ctx.canvas.width, Math.round(cx) + radius + 1);
+  const y1 = Math.min(ctx.canvas.height, Math.round(cy) + radius + 1);
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (w <= 0 || h <= 0) return null;
+  const { data } = ctx.getImageData(x0, y0, w, h);
+  let rMid = 0;
+  let gMid = 0;
+  let bMid = 0;
+  let nMid = 0;
+  let rAll = 0;
+  let gAll = 0;
+  let bAll = 0;
+  let nAll = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i] ?? 0;
+    const g = data[i + 1] ?? 0;
+    const b = data[i + 2] ?? 0;
+    rAll += r;
+    gAll += g;
+    bAll += b;
+    nAll += 1;
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    // Skip specular white and crushed black so the sample is the metal body.
+    if (lum > 0.08 && lum < 0.92) {
+      rMid += r;
+      gMid += g;
+      bMid += b;
+      nMid += 1;
+    }
+  }
+  if (nMid >= 3) return { r: rMid / nMid, g: gMid / nMid, b: bMid / nMid };
+  if (nAll === 0) return null;
+  return { r: rAll / nAll, g: gAll / nAll, b: bAll / nAll };
+}
+
+type EyeDropperCtor = new () => { open: () => Promise<{ sRGBHex: string }> };
+
 export default function ManualPhotoEditor({
   s3Key,
   imageUrl,
@@ -116,6 +170,14 @@ export default function ManualPhotoEditor({
   const [hueTolerance, setHueTolerance] = useState(12);
   const [metalName, setMetalName] = useState("Rose gold");
   const [metalNameLoading, setMetalNameLoading] = useState(false);
+  const [pickingSource, setPickingSource] = useState(false);
+  const [pickingLoading, setPickingLoading] = useState(false);
+  const [hoverSample, setHoverSample] = useState<{ hex: string; left: number; top: number } | null>(
+    null
+  );
+  const previewImgRef = useRef<HTMLImageElement | null>(null);
+  const sampleCacheRef = useRef<{ url: string; canvas: HTMLCanvasElement } | null>(null);
+  const pickingActiveRef = useRef(false);
 
   // Blur brush controls
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -152,6 +214,8 @@ export default function ManualPhotoEditor({
     setShowOriginal(false);
     setTool(initialTool);
     setPreviewKey((k) => k + 1);
+    setPickingSource(false);
+    setHoverSample(null);
   }, [s3Key, imageUrl, initialTool]);
 
   const fetchBgName = useCallback(
@@ -200,6 +264,150 @@ export default function ManualPhotoEditor({
   useEffect(() => {
     if (isValidMetalHex) fetchMetalName(metalHex);
   }, [metalHex, isValidMetalHex, fetchMetalName]);
+
+  const prepareSampleCanvas = useCallback(async (url: string) => {
+    if (sampleCacheRef.current?.url === url) return sampleCacheRef.current.canvas;
+
+    const drawFromImage = (image: HTMLImageElement) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("Could not read image pixels");
+      ctx.drawImage(image, 0, 0);
+      ctx.getImageData(0, 0, 1, 1);
+      sampleCacheRef.current = { url, canvas };
+      return canvas;
+    };
+
+    const loadImage = (src: string, cors: boolean) =>
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        if (cors) image.crossOrigin = "anonymous";
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Could not load image for colour picking"));
+        image.src = src;
+      });
+
+    try {
+      return drawFromImage(await loadImage(url, true));
+    } catch {
+      if (!token) throw new Error("Could not load image for colour picking");
+      const key = showOriginal ? s3Key : workingS3Key;
+      const blob = await downloadImage(token, key);
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        return drawFromImage(await loadImage(objectUrl, false));
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [token, showOriginal, s3Key, workingS3Key]);
+
+  const sampleHexAtClient = useCallback(
+    (clientX: number, clientY: number) => {
+      const img = previewImgRef.current;
+      const cached = sampleCacheRef.current;
+      if (!img || !cached || cached.url !== displayUrl) return null;
+      const rect = img.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      if (
+        clientX < rect.left ||
+        clientX > rect.right ||
+        clientY < rect.top ||
+        clientY > rect.bottom
+      ) {
+        return null;
+      }
+      const canvas = cached.canvas;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return null;
+      const x = ((clientX - rect.left) / rect.width) * canvas.width;
+      const y = ((clientY - rect.top) / rect.height) * canvas.height;
+      const radius = Math.max(2, Math.round(Math.min(canvas.width, canvas.height) * 0.006));
+      const rgb = sampleNeighborhood(ctx, x, y, radius);
+      if (!rgb) return null;
+      return rgbToHex(rgb.r, rgb.g, rgb.b);
+    },
+    [displayUrl]
+  );
+
+  const applyPickedSourceHex = useCallback(
+    (hex: string) => {
+      const next = normalizeHex(hex);
+      const value = next.startsWith("#") ? next : `#${next}`;
+      if (value.replace(/^#/, "").length !== 6) return;
+      const upper = value.toUpperCase();
+      setMetalSourceHex(upper.startsWith("#") ? upper : `#${upper}`);
+      pickingActiveRef.current = false;
+      setPickingSource(false);
+      setHoverSample(null);
+      toast({
+        title: "Metal sampled",
+        description: `Will change ${upper} from this photo.`,
+      });
+    },
+    [toast]
+  );
+
+  const startPickingFromPhoto = async () => {
+    if (pickingSource || pickingLoading) {
+      pickingActiveRef.current = false;
+      setPickingSource(false);
+      setPickingLoading(false);
+      setHoverSample(null);
+      return;
+    }
+    pickingActiveRef.current = true;
+    setPickingLoading(true);
+    try {
+      await prepareSampleCanvas(displayUrl);
+      if (!pickingActiveRef.current) return;
+      setPickingSource(true);
+    } catch {
+      if (!pickingActiveRef.current) return;
+      const EyeDropperClass = (window as unknown as { EyeDropper?: EyeDropperCtor }).EyeDropper;
+      if (EyeDropperClass) {
+        try {
+          const result = await new EyeDropperClass().open();
+          applyPickedSourceHex(result.sRGBHex);
+          return;
+        } catch {
+          return;
+        }
+      }
+      toast({
+        title: "Could not pick from photo",
+        description: "Click a swatch or enter a hex if colour sampling is blocked.",
+        variant: "destructive",
+      });
+    } finally {
+      setPickingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pickingSource) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        pickingActiveRef.current = false;
+        setPickingSource(false);
+        setHoverSample(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickingSource]);
+
+  useEffect(() => {
+    if (!pickingSource) {
+      setHoverSample(null);
+      return;
+    }
+    void prepareSampleCanvas(displayUrl).catch(() => {
+      setPickingSource(false);
+    });
+  }, [pickingSource, displayUrl, prepareSampleCanvas]);
 
   const applyWorkingResult = async (resS3Key: string) => {
     if (!token) return;
@@ -644,6 +852,7 @@ export default function ManualPhotoEditor({
             <div className="relative mx-auto flex w-full justify-center rounded-lg border bg-muted/20 p-2">
               <div className="relative inline-block max-h-[70vh] max-w-full">
                 <img
+                  ref={previewImgRef}
                   key={`${previewKey}-${displayUrl}`}
                   src={displayUrl}
                   alt={showOriginal ? "Original" : "Working edit"}
@@ -656,6 +865,45 @@ export default function ManualPhotoEditor({
                   }}
                   draggable={false}
                 />
+                {tool === "metal" && pickingSource && (
+                  <div
+                    className="absolute inset-0 z-10 cursor-crosshair touch-none"
+                    onPointerMove={(event) => {
+                      const wrap = event.currentTarget.getBoundingClientRect();
+                      const hex = sampleHexAtClient(event.clientX, event.clientY);
+                      if (!hex) {
+                        setHoverSample(null);
+                        return;
+                      }
+                      setHoverSample({
+                        hex,
+                        left: event.clientX - wrap.left,
+                        top: event.clientY - wrap.top,
+                      });
+                    }}
+                    onPointerLeave={() => setHoverSample(null)}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      const hex = sampleHexAtClient(event.clientX, event.clientY);
+                      if (hex) applyPickedSourceHex(hex);
+                    }}
+                  />
+                )}
+                {tool === "metal" && pickingSource && hoverSample && (
+                  <div
+                    className="pointer-events-none absolute z-20 flex items-center gap-2 rounded-full border bg-background/95 px-2 py-1 shadow-md"
+                    style={{
+                      left: Math.min(hoverSample.left + 16, 10000),
+                      top: Math.max(8, hoverSample.top - 44),
+                    }}
+                  >
+                    <span
+                      className="h-6 w-6 rounded-full border"
+                      style={{ backgroundColor: hoverSample.hex }}
+                    />
+                    <span className="font-mono text-xs">{hoverSample.hex}</span>
+                  </div>
+                )}
                 {isBrushTool(tool) && !showOriginal && (
                   <>
                     <canvas ref={maskCanvasRef} className="hidden" />
@@ -677,7 +925,12 @@ export default function ManualPhotoEditor({
                 )}
               </div>
             </div>
-            {showOriginal && (
+            {pickingSource && tool === "metal" && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Click the metal on the photo to sample its colour. Press Esc to cancel.
+              </p>
+            )}
+            {showOriginal && !pickingSource && (
               <p className="mt-2 text-sm text-muted-foreground">
                 Viewing the original. Toggle back to continue editing the latest result.
               </p>
@@ -701,6 +954,9 @@ export default function ManualPhotoEditor({
                 const next = v as ManualEditTool;
                 setTool(next);
                 clearPaint();
+                pickingActiveRef.current = false;
+                setPickingSource(false);
+                setHoverSample(null);
                 if (isBrushTool(next)) {
                   setImageReady(false);
                   setPreviewKey((k) => k + 1);
@@ -842,16 +1098,19 @@ export default function ManualPhotoEditor({
                 <div className="space-y-2">
                   <Label>Metal to change (optional)</Label>
                   <p className="text-xs text-muted-foreground">
-                    Auto-detects gold and gray metals. Pin a swatch for two-tone pieces
-                    (for example change only the silver, or only the gun metal).
+                    Auto-detects gold and gray metals, or pick the exact tone from the photo.
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setMetalSourceHex("")}
+                      onClick={() => {
+                        setMetalSourceHex("");
+                        setPickingSource(false);
+                        setHoverSample(null);
+                      }}
                       title="Auto-detect the current metal"
                       className={`h-8 rounded-full border px-3 text-xs font-medium shadow-sm transition-transform hover:scale-105 ${
-                        cleanMetalSource.length === 0
+                        cleanMetalSource.length === 0 && !pickingSource
                           ? "ring-2 ring-primary ring-offset-2"
                           : "bg-background"
                       }`}
@@ -862,10 +1121,14 @@ export default function ManualPhotoEditor({
                       <button
                         key={`src-${preset.hex}`}
                         type="button"
-                        onClick={() => setMetalSourceHex(preset.hex)}
+                        onClick={() => {
+                          setMetalSourceHex(preset.hex);
+                          setPickingSource(false);
+                          setHoverSample(null);
+                        }}
                         title={`${preset.label} (${preset.hex})`}
                         className={`h-8 w-8 rounded-full border shadow-sm transition-transform hover:scale-110 ${
-                          metalSourceHex.toUpperCase() === preset.hex
+                          !pickingSource && metalSourceHex.toUpperCase() === preset.hex
                             ? "ring-2 ring-primary ring-offset-2"
                             : ""
                         }`}
@@ -873,26 +1136,56 @@ export default function ManualPhotoEditor({
                       />
                     ))}
                   </div>
-                  <Input
-                    placeholder="Auto-detect"
-                    value={metalSourceHex}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      if (raw.trim() === "") {
-                        setMetalSourceHex("");
-                        return;
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="h-10 w-10 shrink-0 rounded border"
+                      style={{
+                        backgroundColor:
+                          isValidMetalSource && cleanMetalSource.length === 6
+                            ? metalSourceHex
+                            : "transparent",
+                      }}
+                      title={
+                        cleanMetalSource.length === 6
+                          ? metalSourceHex.toUpperCase()
+                          : "No source colour pinned"
                       }
-                      const next = normalizeHex(raw);
-                      setMetalSourceHex(
-                        next.length === 6
-                          ? next.startsWith("#")
-                            ? next
-                            : `#${next}`
-                          : raw
-                      );
-                    }}
-                    className="max-w-[160px] font-mono"
-                  />
+                    />
+                    <Input
+                      placeholder="Auto-detect"
+                      value={metalSourceHex}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw.trim() === "") {
+                          setMetalSourceHex("");
+                          return;
+                        }
+                        const next = normalizeHex(raw);
+                        setMetalSourceHex(
+                          next.length === 6
+                            ? next.startsWith("#")
+                              ? next
+                              : `#${next}`
+                            : raw
+                        );
+                      }}
+                      className="max-w-[160px] font-mono"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={pickingSource ? "default" : "outline"}
+                      className="gap-2"
+                      onClick={() => void startPickingFromPhoto()}
+                    >
+                      {pickingLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Pipette className="h-4 w-4" />
+                      )}
+                      {pickingSource ? "Click the photo…" : pickingLoading ? "Preparing…" : "Pick from photo"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Match precision</Label>
