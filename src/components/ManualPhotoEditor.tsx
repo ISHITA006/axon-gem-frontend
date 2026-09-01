@@ -167,6 +167,29 @@ function rectFromPoints(a: { x: number; y: number }, b: { x: number; y: number }
 
 const MIN_JEWELLERY_REGION = 0.02;
 
+/** Matches backend region_alpha_key so we know when BiRefNet will run again. */
+function alphaCacheKey(editTool: ManualEditTool, region: NormRect | null): string {
+  if (editTool === "metal" && region) {
+    return `region_${region.x.toFixed(4)}_${region.y.toFixed(4)}_${region.width.toFixed(4)}_${region.height.toFixed(4)}`;
+  }
+  return "full";
+}
+
+function EditorBusyScreen({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+      <div className="relative">
+        <div className="h-20 w-20 rounded-full border-4 border-muted" />
+        <Loader2 className="absolute inset-0 h-20 w-20 animate-spin text-primary" />
+      </div>
+      <div className="text-center space-y-2 max-w-md px-4">
+        <h2 className="text-xl font-semibold">{title}</h2>
+        <div className="text-sm text-muted-foreground space-y-1">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function ManualPhotoEditor({
   s3Key,
   imageUrl,
@@ -185,10 +208,13 @@ export default function ManualPhotoEditor({
   const [showOriginal, setShowOriginal] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generatingPhase, setGeneratingPhase] = useState<"segmenting" | "applying">("applying");
   const [warming, setWarming] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editCount, setEditCount] = useState(0);
+  const segmentedAlphaKeysRef = useRef(new Set<string>());
+  const pendingAlphaKeyRef = useRef<string | null>(null);
 
   // Background controls
   const [bgHex, setBgHex] = useState("#F8F8F8");
@@ -256,6 +282,9 @@ export default function ManualPhotoEditor({
     setJewelleryRegion(null);
     setJewelleryDrag(null);
     jewelleryDragStartRef.current = null;
+    segmentedAlphaKeysRef.current = new Set();
+    pendingAlphaKeyRef.current = null;
+    setGeneratingPhase("applying");
   }, [s3Key, imageUrl, initialTool]);
 
   useEffect(() => {
@@ -523,11 +552,24 @@ export default function ManualPhotoEditor({
     });
   }, [pickingSource, displayUrl, prepareSampleCanvas]);
 
+  const beginApply = (editTool: ManualEditTool) => {
+    const key = alphaCacheKey(editTool, jewelleryRegion);
+    pendingAlphaKeyRef.current = key;
+    setGeneratingPhase(segmentedAlphaKeysRef.current.has(key) ? "applying" : "segmenting");
+    setGenerating(true);
+  };
+
+  const markAlphaReady = () => {
+    const key = pendingAlphaKeyRef.current;
+    if (key) segmentedAlphaKeysRef.current.add(key);
+  };
+
   const applyWorkingResult = async (res: { s3_key: string; url: string }) => {
     if (!token) return;
     const displayUrlNext =
       res.url ||
       (await getPresignedUrl(token, res.s3_key));
+    markAlphaReady();
     setWorkingS3Key(res.s3_key);
     setWorkingUrl(displayUrlNext);
     setDirty(true);
@@ -684,7 +726,7 @@ export default function ManualPhotoEditor({
       });
       return;
     }
-    setGenerating(true);
+    beginApply("background");
     try {
       const res = await apiChangeBackgroundColour(
         token,
@@ -714,7 +756,7 @@ export default function ManualPhotoEditor({
       });
       return;
     }
-    setGenerating(true);
+    beginApply("metal");
     try {
       const res = await apiChangeMetalColour(
         token,
@@ -749,7 +791,7 @@ export default function ManualPhotoEditor({
       });
       return;
     }
-    setGenerating(true);
+    beginApply("blur");
     try {
       const maskBlob = await exportMaskBlob();
       if (!maskBlob) throw new Error("Could not export brush mask");
@@ -780,7 +822,7 @@ export default function ManualPhotoEditor({
       });
       return;
     }
-    setGenerating(true);
+    beginApply("shadow");
     try {
       const maskBlob = await exportMaskBlob();
       if (!maskBlob) throw new Error("Could not export brush mask");
@@ -885,35 +927,31 @@ export default function ManualPhotoEditor({
 
   if (warming) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
-        <div className="relative">
-          <div className="h-20 w-20 rounded-full border-4 border-muted" />
-          <Loader2 className="absolute inset-0 h-20 w-20 animate-spin text-primary" />
-        </div>
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-semibold">Preparing editor…</h2>
-          <p className="text-sm text-muted-foreground">
-            Loading the retouch model after server start. This is not an edit — apply will be faster once this finishes.
-          </p>
-        </div>
-      </div>
+      <EditorBusyScreen title="Preparing jewellery segmentation…">
+        <p>
+          Loading the jewellery segmentation model after server start. This is not an edit — apply
+          will be faster once this finishes.
+        </p>
+      </EditorBusyScreen>
     );
   }
 
   if (generating) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
-        <div className="relative">
-          <div className="h-20 w-20 rounded-full border-4 border-muted" />
-          <Loader2 className="absolute inset-0 h-20 w-20 animate-spin text-primary" />
-        </div>
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-semibold">Applying edit...</h2>
-          <p className="text-sm text-muted-foreground">
-            Updating your working image. Nothing is saved to the gallery until you click Save.
+    if (generatingPhase === "segmenting") {
+      return (
+        <EditorBusyScreen title="Jewellery segmentation in progress…">
+          <p>
+            Finding the jewellery in this photo so the edit stays on the piece. The first pass can
+            take a minute or two; later edits on the same image are quicker.
           </p>
-        </div>
-      </div>
+          <p>Nothing is saved to the gallery until you click Save.</p>
+        </EditorBusyScreen>
+      );
+    }
+    return (
+      <EditorBusyScreen title="Applying edit…">
+        <p>Updating your working image. Nothing is saved to the gallery until you click Save.</p>
+      </EditorBusyScreen>
     );
   }
 
