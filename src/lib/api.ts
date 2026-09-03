@@ -396,17 +396,21 @@ export async function apiDeleteProductSideAngle(token: string, uid: string) {
   await assertOk(res, "Delete failed");
 }
 
+export type ModelPoseSource = "generated" | "uploaded";
+
 export type ModelPoseRecord = {
   uid: string;
   model_uid: string;
   pose_uid: string;
   image_s3_key: string;
+  source?: ModelPoseSource | null;
 };
 
 export type ModelPoseCreatePayload = {
   model_uid: string;
   pose_uid: string;
   image_s3_key: string;
+  source?: ModelPoseSource;
 };
 
 export type ModelPoseUpdatePayload = ModelPoseCreatePayload;
@@ -446,6 +450,24 @@ export async function apiCreateModelPose(token: string, payload: ModelPoseCreate
     body: JSON.stringify(payload),
   });
   await assertOk(res, "Create failed");
+  return res.json() as Promise<ModelPoseRecord>;
+}
+
+export async function apiUploadModelPoseFile(
+  token: string,
+  payload: { modelUid: string; poseUid: string; file: File }
+) {
+  const formData = new FormData();
+  formData.append("model_uid", payload.modelUid);
+  formData.append("pose_uid", payload.poseUid);
+  formData.append("file", await asUploadableImage(payload.file));
+
+  const res = await fetch(`${API_BASE_URL}/model-poses/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Upload failed");
   return res.json() as Promise<ModelPoseRecord>;
 }
 

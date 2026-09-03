@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiListFemaleAdultModels,
@@ -8,8 +8,10 @@ import {
   apiListPoses,
   apiListModelPosesForModel,
   apiCreateModelPose,
+  apiUpdateModelPose,
   apiDeleteModelPose,
   apiGenerateModelPoseImage,
+  apiUploadModelPoseFile,
   modelPoseImageS3KeyFromGenerateResponse,
   getPresignedUrl,
   type ModelRecord,
@@ -29,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Check, ImageIcon, Layers, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Check, ImageIcon, Layers, Loader2, Sparkles, Trash2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -105,6 +107,9 @@ export default function ManageModelPoses() {
   const [deletingUid, setDeletingUid] = useState<string | null>(null);
   const [confirmDeleteUid, setConfirmDeleteUid] = useState<string | null>(null);
   const [generatingPose, setGeneratingPose] = useState(false);
+  const [uploadingPose, setUploadingPose] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadPoseUidRef = useRef<string | null>(null);
 
   const poseByUid = useMemo(() => Object.fromEntries(poses.map((p) => [p.uid, p])), [poses]);
   const modelByUid = useMemo(() => Object.fromEntries(models.map((m) => [m.uid, m])), [models]);
@@ -237,18 +242,65 @@ export default function ManageModelPoses() {
     try {
       const genJson = await apiGenerateModelPoseImage(token, model.image_s3_key, pose.image_s3_key);
       const imageS3Key = modelPoseImageS3KeyFromGenerateResponse(genJson);
-      await apiCreateModelPose(token, {
-        model_uid: selectedModelUid,
-        pose_uid: filterPoseUid,
-        image_s3_key: imageS3Key,
-      });
-      toast({ title: "Created", description: "Model pose saved." });
+      const existing = rows.find((r) => r.pose_uid === filterPoseUid);
+      if (existing) {
+        await apiUpdateModelPose(token, existing.uid, {
+          model_uid: selectedModelUid,
+          pose_uid: filterPoseUid,
+          image_s3_key: imageS3Key,
+          source: "generated",
+        });
+        toast({ title: "Updated", description: "Model pose regenerated." });
+      } else {
+        await apiCreateModelPose(token, {
+          model_uid: selectedModelUid,
+          pose_uid: filterPoseUid,
+          image_s3_key: imageS3Key,
+          source: "generated",
+        });
+        toast({ title: "Created", description: "Model pose saved." });
+      }
       await fetchModelPoses();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Generation failed";
       toast({ title: "Could not create model pose", description: message, variant: "destructive" });
     } finally {
       setGeneratingPose(false);
+    }
+  };
+
+  const openUploadForPose = (poseUid: string) => {
+    uploadPoseUidRef.current = poseUid;
+    fileInputRef.current?.click();
+  };
+
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const poseUid = uploadPoseUidRef.current;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!token || !selectedModelUid || !file || !poseUid) return;
+
+    const pose = poseByUid[poseUid];
+    if (!pose) {
+      toast({ title: "Error", description: "Invalid pose.", variant: "destructive" });
+      return;
+    }
+
+    setUploadingPose(true);
+    try {
+      await apiUploadModelPoseFile(token, {
+        modelUid: selectedModelUid,
+        poseUid,
+        file,
+      });
+      toast({ title: "Uploaded", description: "Model pose image saved." });
+      await fetchModelPoses();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      toast({ title: "Upload failed", description: message, variant: "destructive" });
+    } finally {
+      setUploadingPose(false);
+      uploadPoseUidRef.current = null;
     }
   };
 
@@ -451,7 +503,50 @@ export default function ManageModelPoses() {
 
             {selectedModelUid && (
               <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.heic,.heif"
+                  className="hidden"
+                  onChange={handleUploadFile}
+                />
                 <h3 className="mb-3 text-sm font-semibold">Model poses</h3>
+                {filterPoseUid !== ALL_POSES_VALUE && (
+                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <p className="flex-1 text-xs text-muted-foreground">
+                      Generate this pose with Gemini, or upload an image from your computer.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        disabled={generatingPose || uploadingPose || catalogLoading}
+                        onClick={handleGenerateForFilteredPose}
+                      >
+                        {generatingPose ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-2 h-4 w-4" />
+                        )}
+                        {rows.some((r) => r.pose_uid === filterPoseUid)
+                          ? "Regenerate with Gemini"
+                          : "Generate with Gemini"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={generatingPose || uploadingPose || catalogLoading}
+                        onClick={() => openUploadForPose(filterPoseUid)}
+                      >
+                        {uploadingPose ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="mr-2 h-4 w-4" />
+                        )}
+                        Upload from computer
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {listLoading ? (
                   <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {Array.from({ length: 6 }).map((_, i) => (
@@ -464,23 +559,8 @@ export default function ManageModelPoses() {
                     <p className="text-sm text-muted-foreground">
                       {filterPoseUid === ALL_POSES_VALUE
                         ? "No model poses for this model yet."
-                        : "No results for this model and pose."}
+                        : "No image for this model and pose yet."}
                     </p>
-                    {filterPoseUid !== ALL_POSES_VALUE && (
-                      <Button
-                        type="button"
-                        className="mt-4"
-                        disabled={generatingPose || catalogLoading}
-                        onClick={handleGenerateForFilteredPose}
-                      >
-                        {generatingPose ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="mr-2 h-4 w-4" />
-                        )}
-                        Generate for this pose
-                      </Button>
-                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -503,7 +583,21 @@ export default function ManageModelPoses() {
                               <ImageIcon className="h-8 w-8 text-muted-foreground" />
                             </div>
                           )}
-                          <div className="absolute inset-0 flex items-start justify-center bg-gradient-to-b from-black/60 to-transparent opacity-0 transition group-hover:opacity-100">
+                          <div className="absolute inset-0 flex items-start justify-center gap-2 bg-gradient-to-b from-black/60 to-transparent opacity-0 transition group-hover:opacity-100">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="mt-3"
+                              disabled={uploadingPose || generatingPose}
+                              onClick={() => openUploadForPose(row.pose_uid)}
+                            >
+                              {uploadingPose ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : (
+                                <Upload className="mr-1 h-3 w-3" />
+                              )}
+                              Upload
+                            </Button>
                             <Button
                               variant="destructive"
                               size="sm"
@@ -524,6 +618,9 @@ export default function ManageModelPoses() {
                             {selectedModel && (
                               <p className="truncate text-white/80">{selectedModel.name}</p>
                             )}
+                            {row.source === "uploaded" && (
+                              <p className="truncate text-white/70">Uploaded</p>
+                            )}
                           </div>
                         </div>
                       );
@@ -541,7 +638,7 @@ export default function ManageModelPoses() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete model pose</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes this generated model pose record and its image. This cannot be undone.
+              This removes this model pose record and its image. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
