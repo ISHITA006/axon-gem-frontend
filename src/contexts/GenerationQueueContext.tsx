@@ -38,8 +38,22 @@ type GenerationQueueValue = {
 
 const GenerationQueueContext = createContext<GenerationQueueValue | null>(null);
 
+/** Status polling while a job is queued or processing. Idle queues do not poll. */
+export const ACTIVE_POLL_INTERVAL_MS = 30_000;
+
+/** Brief pause before reopening dispatch if Cloud Run cut the previous hold. */
+const DISPATCH_RECONNECT_MS = 1_000;
+
 function isActiveStatus(status: string): boolean {
   return status === "queued" || status === "processing";
+}
+
+function hasActiveJobs(jobs: GenerationJob[]): boolean {
+  return jobs.some((job) => isActiveStatus(job.status));
+}
+
+function isTabVisible(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "visible";
 }
 
 export function GenerationQueueProvider({ children }: { children: ReactNode }) {
@@ -54,11 +68,43 @@ export function GenerationQueueProvider({ children }: { children: ReactNode }) {
   const jobsRef = useRef<GenerationJob[]>([]);
   const dispatchingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
 
   const applyJobs = useCallback((next: GenerationJob[]) => {
     jobsRef.current = next;
     setJobs(next);
   }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current != null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current != null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const pollTickRef = useRef<() => void>(() => {});
+
+  const syncPolling = useCallback(() => {
+    const shouldPoll = Boolean(tokenRef.current) && isTabVisible() && hasActiveJobs(jobsRef.current);
+    if (!shouldPoll) {
+      stopPolling();
+      return;
+    }
+    if (pollTimerRef.current != null) return;
+    pollTimerRef.current = window.setInterval(() => {
+      pollTickRef.current();
+    }, ACTIVE_POLL_INTERVAL_MS);
+  }, [stopPolling]);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -72,6 +118,7 @@ export function GenerationQueueProvider({ children }: { children: ReactNode }) {
         toast({ title: `${job.title} is ready`, description });
         notifyGenerationSuccess(`${job.title} is ready`, description);
         void queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+        void queryClient.invalidateQueries({ queryKey: ["gallery-products"] });
       } else if (job.status === "failed") {
         const description = job.error_message || "Generation failed. You can submit it again.";
         toast({ title: `${job.title} failed`, description, variant: "destructive" });
@@ -85,7 +132,8 @@ export function GenerationQueueProvider({ children }: { children: ReactNode }) {
     if (typeof data.completed_visible_limit === "number" && data.completed_visible_limit > 0) {
       setCompletedVisibleLimit(data.completed_visible_limit);
     }
-  }, [applyJobs, queryClient, toast, token]);
+    syncPolling();
+  }, [applyJobs, queryClient, syncPolling, toast, token]);
 
   const kickDispatch = useCallback(async () => {
     if (!token || dispatchingRef.current) return;
@@ -95,43 +143,85 @@ export function GenerationQueueProvider({ children }: { children: ReactNode }) {
     try {
       await apiDispatchGenerationJobs(token, abort.signal);
     } catch {
-      // Aborted on logout/unmount, or the request ended; polling retries.
+      // Aborted on logout/unmount, or the request ended; reconnect if jobs remain.
     } finally {
       dispatchingRef.current = false;
       if (abortRef.current === abort) abortRef.current = null;
-      void refresh().catch(() => undefined);
+      if (abort.signal.aborted) return;
+      void refresh()
+        .catch(() => undefined)
+        .then(() => {
+          if (abort.signal.aborted || !hasActiveJobs(jobsRef.current)) return;
+          clearReconnectTimer();
+          reconnectTimerRef.current = window.setTimeout(() => {
+            reconnectTimerRef.current = null;
+            void kickDispatch();
+          }, DISPATCH_RECONNECT_MS);
+        });
     }
-  }, [refresh, token]);
+  }, [clearReconnectTimer, refresh, token]);
+
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const kickDispatchRef = useRef(kickDispatch);
+  kickDispatchRef.current = kickDispatch;
+
+  pollTickRef.current = () => {
+    if (!tokenRef.current || !isTabVisible()) {
+      stopPolling();
+      return;
+    }
+    void refreshRef.current()
+      .catch(() => undefined)
+      .then(() => {
+        if (hasActiveJobs(jobsRef.current)) {
+          void kickDispatchRef.current();
+        }
+      });
+  };
 
   useEffect(() => {
     if (!token) {
       applyJobs([]);
       setProcessingCount(0);
       setQueuedCount(0);
+      stopPolling();
+      clearReconnectTimer();
       abortRef.current?.abort();
       return;
     }
     void ensureGenerationNotifyPermission();
-    void refresh()
+    void refreshRef.current()
       .then(() => {
-        if (jobsRef.current.some((job) => isActiveStatus(job.status))) {
-          void kickDispatch();
+        if (hasActiveJobs(jobsRef.current)) {
+          void kickDispatchRef.current();
         }
       })
       .catch(() => undefined);
 
-    const interval = window.setInterval(() => {
-      void refresh().catch(() => undefined);
-      if (jobsRef.current.some((job) => isActiveStatus(job.status))) {
-        void kickDispatch();
+    const onVisibility = () => {
+      if (!isTabVisible()) {
+        stopPolling();
+        return;
       }
-    }, 3000);
+      if (!tokenRef.current) return;
+      void refreshRef.current()
+        .catch(() => undefined)
+        .then(() => {
+          if (hasActiveJobs(jobsRef.current)) {
+            void kickDispatchRef.current();
+          }
+        });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      stopPolling();
+      clearReconnectTimer();
       abortRef.current?.abort();
     };
-  }, [applyJobs, kickDispatch, refresh, token]);
+  }, [applyJobs, clearReconnectTimer, stopPolling, token]);
 
   const trackJob = useCallback(
     (job: GenerationJob) => {
@@ -139,10 +229,11 @@ export function GenerationQueueProvider({ children }: { children: ReactNode }) {
       if (job.status === "queued") {
         setQueuedCount((count) => count + 1);
       }
+      syncPolling();
       void kickDispatch();
       void refresh().catch(() => undefined);
     },
-    [applyJobs, kickDispatch, refresh]
+    [applyJobs, kickDispatch, refresh, syncPolling]
   );
 
   const cancelJob = useCallback(

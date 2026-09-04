@@ -1105,6 +1105,7 @@ export async function apiEditImageWithInstructions(
     editInstructions: string;
     sourceImageFile: File;
     referenceImageFile?: File | null;
+    sourceGalleryS3Key?: string | null;
   }
 ): Promise<GenerationJob> {
   const formData = new FormData();
@@ -1112,6 +1113,9 @@ export async function apiEditImageWithInstructions(
   formData.append("source_image_file", await asUploadableImage(payload.sourceImageFile));
   if (payload.referenceImageFile) {
     formData.append("reference_image_file", await asUploadableImage(payload.referenceImageFile));
+  }
+  if (payload.sourceGalleryS3Key) {
+    formData.append("source_gallery_s3_key", payload.sourceGalleryS3Key);
   }
 
   const res = await fetch(`${API_BASE_URL}/edit-image-tool`, {
@@ -1357,6 +1361,8 @@ export type ApiGenerateTryOnOptions = {
   placementMask?: Blob | null;
   /** Optional user-shaded mask for the close-up pose (used when generating a close-up). */
   closeUpPlacementMask?: Blob | null;
+  /** Required product ID/SKU so this shoot is grouped in the gallery. */
+  productId: string;
 };
 
 export async function apiGenerateTryOn(
@@ -1464,6 +1470,10 @@ export async function apiGenerateTryOn(
     closeUpPlacementMaskS3Key = await uploadPlacementMask(closeUpPlacementMask);
     params.set("close_up_placement_mask_s3_key", closeUpPlacementMaskS3Key);
   }
+  const productId = options?.productId?.trim();
+  if (productId) {
+    params.set("product_id", productId);
+  }
 
   const res = await fetch(`${API_BASE_URL}/generate-jewellery-try-on-images?${params.toString()}`, {
     method: "POST",
@@ -1489,6 +1499,9 @@ export type GalleryItem = {
   category: GalleryCategory | string;
   image_s3_keys: string[];
   analysis?: Record<string, unknown> | null;
+  product_uid?: string | null;
+  product_sku?: string | null;
+  product_name?: string | null;
   created_at: string;
   edited_at: string;
   draft_uid?: string | null;
@@ -1496,6 +1509,34 @@ export type GalleryItem = {
   generations_used?: number | null;
   generations_remaining?: number | null;
   max_generations?: number | null;
+};
+
+export type GalleryProduct = {
+  uid: string;
+  sku: string;
+  name: string;
+  hero_thumbnail_s3_key: string;
+  reference_image_s3_key: string;
+  product_shoot_count: number;
+  model_shoot_count: number;
+  edited_image_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GalleryProductListResponse = {
+  items: GalleryProduct[];
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+};
+
+export type GalleryProductDetailResponse = {
+  product: GalleryProduct;
+  product_shoots: GalleryItem[];
+  model_shoots: GalleryItem[];
+  edited_images: GalleryItem[];
 };
 
 export function galleryImageCaptions(
@@ -1521,7 +1562,7 @@ export type GalleryListResponse = {
 export async function apiGetGalleryItems(
   token: string,
   params: {
-    category: GalleryCategory;
+    category: GalleryCategory | "recent";
     page: number;
     limit?: number;
   }
@@ -1533,7 +1574,9 @@ export async function apiGetGalleryItems(
   }
 
   let path = "/gallery";
-  if (params.category === "model-shoot") {
+  if (params.category === "recent") {
+    path = "/gallery/recent";
+  } else if (params.category === "model-shoot") {
     path = "/gallery/model-shoot";
   } else if (params.category === "product-shoot") {
     path = "/gallery/product-shoot";
@@ -1548,6 +1591,56 @@ export async function apiGetGalleryItems(
   });
   await assertOk(res, "Failed to fetch gallery items");
   return res.json() as Promise<GalleryListResponse>;
+}
+
+export async function apiGetGalleryProducts(
+  token: string,
+  params: { page: number; limit?: number }
+) {
+  const sp = new URLSearchParams();
+  sp.set("page", String(params.page));
+  if (params.limit != null) {
+    sp.set("limit", String(params.limit));
+  }
+  const res = await fetch(`${API_BASE_URL}/gallery/products?${sp.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch gallery products");
+  return res.json() as Promise<GalleryProductListResponse>;
+}
+
+export async function apiGetGalleryProduct(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/gallery/products/${encodeURIComponent(uid)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch product");
+  return res.json() as Promise<GalleryProductDetailResponse>;
+}
+
+export async function apiDeleteGalleryProduct(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/gallery/products/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to delete product");
+  return res.json() as Promise<{ uid: string; sku: string; deleted_gallery_items: number }>;
+}
+
+export async function apiAssignGalleryItemProduct(
+  token: string,
+  uid: string,
+  productId: string
+) {
+  const res = await fetch(`${API_BASE_URL}/gallery/${encodeURIComponent(uid)}/product`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ product_id: productId }),
+  });
+  await assertOk(res, "Failed to assign product ID");
+  return res.json() as Promise<GalleryItem>;
 }
 
 export async function apiDeleteGalleryItem(token: string, uid: string) {
@@ -1680,6 +1773,7 @@ export type ApiCreateStudioShootOptions = {
   backgroundFile?: File | null;
   productAngleS3Key?: string | null;
   productSideAngleS3Key?: string | null;
+  productId: string;
 };
 
 export async function apiCreateStudioShoot(
@@ -1724,6 +1818,8 @@ export async function apiCreateStudioShoot(
     if (generateSide && productSideAngleS3Key) {
       formData.append("product_side_angle_s3_key", productSideAngleS3Key);
     }
+    const productId = options.productId.trim();
+    formData.append("product_id", productId);
     return fetch(`${API_BASE_URL}/create-studio-shoot`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },

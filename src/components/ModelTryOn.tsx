@@ -171,6 +171,7 @@ export default function ModelTryOn({
   const [clothingPreview, setClothingPreview] = useState<string | null>(null);
   const [clothingExternalS3Key, setClothingExternalS3Key] = useState<string | null>(null);
   const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
+  const [productId, setProductId] = useState("");
 
   clothingFileRef.current = clothingFile;
   const [views, setViews] = useState<ModelShootViews>("front");
@@ -646,6 +647,7 @@ export default function ModelTryOn({
     setSelectedBackground(null);
     setUseDimensions(false);
     setDimensionRows([]);
+    setProductId("");
     onQueued?.();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -656,6 +658,14 @@ export default function ModelTryOn({
       toast({
         title: "Missing fields",
         description: "Please add a jewellery image (upload or open from elsewhere) and select a model.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!productId.trim()) {
+      toast({
+        title: "Product ID required",
+        description: "Enter a product ID to group this shoot in My Gallery.",
         variant: "destructive",
       });
       return;
@@ -760,6 +770,7 @@ export default function ModelTryOn({
           placementMask,
           closeUpPlacementMask,
           ...(clothingExternalS3Key ? { existingJewelleryS3Key: clothingExternalS3Key } : {}),
+          productId: productId.trim(),
         }
       );
       trackJob(job);
@@ -828,6 +839,26 @@ export default function ModelTryOn({
         onNoticeChange={setQueuedNotice}
         onViewQueue={onViewQueue}
       />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Product ID *</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1.5">
+          <Label htmlFor="tryon-product-id">Product ID</Label>
+          <Input
+            id="tryon-product-id"
+            value={productId}
+            onChange={(e) => setProductId(e.target.value)}
+            placeholder="e.g. AXG-0001 or RING-14"
+            maxLength={64}
+            autoComplete="off"
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Enter an existing product ID to group this shoot, or a new ID to create a product.
+          </p>
+        </CardContent>
+      </Card>
       {/* Upload Section */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -1597,6 +1628,7 @@ export default function ModelTryOn({
           onClick={handleGenerate}
           disabled={
             generating ||
+            !productId.trim() ||
             !(clothingFile || clothingExternalS3Key) ||
             !selectedModelUid ||
             (generateFront && wantModelPose && !selectedModelPoseS3Key) ||

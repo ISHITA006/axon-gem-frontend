@@ -204,6 +204,7 @@ export default function EditImage({
         editInstructions: trimmed,
         sourceImageFile: sourceFile,
         referenceImageFile: referenceFile,
+        sourceGalleryS3Key: userChoseLocalSourceRef.current ? null : sourceImageS3Key,
       });
       trackJob(job);
       userChoseLocalSourceRef.current = true;

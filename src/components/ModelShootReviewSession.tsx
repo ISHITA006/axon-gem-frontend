@@ -200,6 +200,7 @@ export default function ModelShootReviewSession({
         void loadDraft(draftUid, job.generation_uid);
         setProgressLabel(null);
         void queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+        void queryClient.invalidateQueries({ queryKey: ["gallery-products"] });
       }
       if (job.status === "failed") {
         setProgressLabel(null);
@@ -263,6 +264,7 @@ export default function ModelShootReviewSession({
       const data = await apiSaveModelShootDraft(token, draft.uid, activeGenerationUid);
       applyDraft(data.draft);
       await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+      await queryClient.invalidateQueries({ queryKey: ["gallery-products"] });
       toast({ title: "Saved", description: "This look is now in your model-shoot gallery." });
     } catch (err) {
       toast({ title: "Could not save", description: errorMessage(err), variant: "destructive" });

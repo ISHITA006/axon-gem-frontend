@@ -1,17 +1,23 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, type ColumnDef, type PaginationState, useReactTable } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Tag, Trash2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  apiAssignGalleryItemProduct,
   apiDeleteGalleryItem,
+  apiDeleteGalleryProduct,
   apiGetGalleryItems,
+  apiGetGalleryProduct,
+  apiGetGalleryProducts,
   downloadMedia,
   getPresignedUrl,
   galleryImageCaptions,
   type GalleryCategory,
   type GalleryItem,
+  type GalleryProduct,
+  type GalleryProductDetailResponse,
 } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,6 +32,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatTableDate } from "./catalogue/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
@@ -34,7 +50,14 @@ import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
-const GALLERY_CATEGORIES: GalleryCategory[] = ["model-shoot", "product-shoot", "edited-image", "deleted-catalogue"];
+const PRODUCTS_PER_PAGE = 24;
+type GalleryView = "products" | "recent" | "deleted-catalogue";
+const GALLERY_VIEWS: { id: GalleryView; label: string }[] = [
+  { id: "products", label: "All products" },
+  { id: "recent", label: "All generations" },
+  { id: "deleted-catalogue", label: "Deleted Catalogue Items" },
+];
+const ASSIGNABLE_CATEGORIES = new Set(["model-shoot", "product-shoot", "edited-image"]);
 const GALLERY_CATEGORY_LABELS: Record<GalleryCategory, string> = {
   "model-shoot": "Model Shoot",
   "product-shoot": "Product Shoot",
@@ -150,6 +173,38 @@ function GalleryImageCell({
   );
 }
 
+function ProductHeroThumb({ token, s3Key }: { token: string | null; s3Key: string }) {
+  const urlQuery = useQuery({
+    queryKey: ["presigned-url", token, s3Key],
+    enabled: Boolean(token && s3Key),
+    queryFn: () => getPresignedUrl(token!, s3Key),
+    staleTime: 3 * 60 * 1000,
+  });
+  return (
+    <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted/30">
+      {urlQuery.isPending ? (
+        <div className="flex h-full w-full items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : urlQuery.isError || !urlQuery.data ? (
+        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+          No image
+        </div>
+      ) : (
+        <img src={urlQuery.data} alt="" className="h-full w-full object-cover" />
+      )}
+    </div>
+  );
+}
+
+function countBadge(count: number, label: string, className: string) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${className}`}>
+      {count} {label}
+    </span>
+  );
+}
+
 export default function MyGallery({
   onEditImage,
   onManualPhotoEdit,
@@ -158,27 +213,55 @@ export default function MyGallery({
   const { token } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [category, setCategory] = useState<GalleryCategory>("model-shoot");
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: ITEMS_PER_PAGE });
+  const [view, setView] = useState<GalleryView>("products");
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PRODUCTS_PER_PAGE });
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [imageIndexByRow, setImageIndexByRow] = useState<Record<string, number>>({});
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null);
+  const [selectedProductUid, setSelectedProductUid] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [galleryDeleting, setGalleryDeleting] = useState(false);
+  const [deleteProductTarget, setDeleteProductTarget] = useState<GalleryProduct | null>(null);
+  const [productDeleting, setProductDeleting] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<GalleryItem | null>(null);
+  const [assignProductId, setAssignProductId] = useState("");
+  const [assigning, setAssigning] = useState(false);
   const [resumeDraft, setResumeDraft] = useState<{
     uid: string;
     category: GalleryCategory;
   } | null>(null);
 
   const page = pagination.pageIndex + 1;
+  const listCategory: GalleryCategory | "recent" =
+    view === "deleted-catalogue" ? "deleted-catalogue" : "recent";
+
+  const productsQuery = useQuery({
+    queryKey: ["gallery-products", token, page, pagination.pageSize],
+    enabled: Boolean(token) && view === "products" && !selectedProductUid,
+    queryFn: async () => {
+      if (!token) throw new Error("Not authenticated");
+      return apiGetGalleryProducts(token, { page, limit: pagination.pageSize });
+    },
+    staleTime: 15_000,
+  });
+
+  const productDetailQuery = useQuery({
+    queryKey: ["gallery-products", token, selectedProductUid],
+    enabled: Boolean(token && selectedProductUid),
+    queryFn: async () => {
+      if (!token || !selectedProductUid) throw new Error("Not authenticated");
+      return apiGetGalleryProduct(token, selectedProductUid);
+    },
+    staleTime: 15_000,
+  });
 
   const query = useQuery({
-    queryKey: ["gallery-items", token, category, page, pagination.pageSize],
-    enabled: Boolean(token),
+    queryKey: ["gallery-items", token, listCategory, page, pagination.pageSize],
+    enabled: Boolean(token) && view !== "products",
     queryFn: async () => {
       if (!token) throw new Error("Not authenticated");
       return apiGetGalleryItems(token, {
-        category,
+        category: listCategory,
         page,
         limit: pagination.pageSize,
       });
@@ -199,6 +282,7 @@ export default function MyGallery({
       });
       if (selectedItem?.uid === deleteTarget.uid) setSelectedItem(null);
       await qc.invalidateQueries({ queryKey: ["gallery-items"] });
+      await qc.invalidateQueries({ queryKey: ["gallery-products"] });
       toast({ title: "Deleted", description: "Gallery item removed." });
     } catch (err: unknown) {
       toast({
@@ -208,6 +292,65 @@ export default function MyGallery({
       });
     } finally {
       setGalleryDeleting(false);
+    }
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!token || !deleteProductTarget?.uid) return;
+    setProductDeleting(true);
+    try {
+      const result = await apiDeleteGalleryProduct(token, deleteProductTarget.uid);
+      const sku = result.sku || deleteProductTarget.sku;
+      setDeleteProductTarget(null);
+      if (selectedProductUid === deleteProductTarget.uid) setSelectedProductUid(null);
+      if (selectedItem?.product_uid === deleteProductTarget.uid) setSelectedItem(null);
+      await qc.invalidateQueries({ queryKey: ["gallery-items"] });
+      await qc.invalidateQueries({ queryKey: ["gallery-products"] });
+      toast({
+        title: "Product deleted",
+        description: `${sku} and all generations grouped under it were removed.`,
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Delete failed",
+        description: err instanceof Error ? err.message : "Could not delete product",
+        variant: "destructive",
+      });
+    } finally {
+      setProductDeleting(false);
+    }
+  };
+
+  const confirmAssignGalleryItem = async () => {
+    if (!token || !assignTarget?.uid) return;
+    const productId = assignProductId.trim();
+    if (!productId) {
+      toast({
+        title: "Product ID required",
+        description: "Enter a product ID to group this item.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setAssigning(true);
+    try {
+      await apiAssignGalleryItemProduct(token, assignTarget.uid, productId);
+      setAssignTarget(null);
+      setAssignProductId("");
+      await qc.invalidateQueries({ queryKey: ["gallery-items"] });
+      await qc.invalidateQueries({ queryKey: ["gallery-products"] });
+      toast({
+        title: "Product ID saved",
+        description: `This item is now grouped under ${productId}.`,
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Could not save product ID",
+        description: err instanceof Error ? err.message : "Assignment failed",
+        variant: "destructive",
+      });
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -310,6 +453,18 @@ export default function MyGallery({
         },
       },
       {
+        id: "product_id",
+        header: "Product ID",
+        cell: ({ row }) => {
+          const sku = row.original.product_sku?.trim();
+          return sku ? (
+            <span className="font-mono text-xs">{sku}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          );
+        },
+      },
+      {
         accessorKey: "created_at",
         header: "Created",
         cell: ({ row }) => formatTableDate(row.original.created_at),
@@ -332,8 +487,10 @@ export default function MyGallery({
           const downloading = Boolean(selectedKey && actionKey === `download:${selectedKey}`);
           const editing = Boolean(selectedKey && actionKey === `edit:${selectedKey}`);
           const openingTryOn = Boolean(selectedKey && actionKey === `tryon:${selectedKey}`);
-          const disabled = downloading || editing || openingTryOn || galleryDeleting;
+          const disabled = downloading || editing || openingTryOn || galleryDeleting || assigning;
           const showTryOn = Boolean(onOpenTryOnWithJewellery && selectedKey);
+          const canAssign = ASSIGNABLE_CATEGORIES.has(String(row.original.category));
+          const rowAssigning = assigning && assignTarget?.uid === uid;
           return (
             <div className="flex max-w-[220px] flex-wrap items-center gap-1.5 md:max-w-none md:gap-2">
               {selectedKey ? (
@@ -383,6 +540,22 @@ export default function MyGallery({
                   ) : null}
                 </>
               ) : null}
+              {canAssign ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Assign product ID"
+                  disabled={!token || galleryDeleting || assigning}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAssignTarget(row.original);
+                    setAssignProductId(row.original.product_sku ?? "");
+                  }}
+                >
+                  {rowAssigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -404,6 +577,8 @@ export default function MyGallery({
     ],
     [
       actionKey,
+      assignTarget?.uid,
+      assigning,
       deleteTarget?.uid,
       galleryDeleting,
       imageIndexByRow,
@@ -440,8 +615,21 @@ export default function MyGallery({
     setResumeDraft(null);
   };
 
-  const canPrev = (query.data?.page ?? 1) > 1;
-  const canNext = query.data?.total_pages ? (query.data?.page ?? 1) < query.data.total_pages : false;
+  const listQuery = view === "products" ? productsQuery : query;
+  const canPrev = (listQuery.data?.page ?? 1) > 1;
+  const canNext = listQuery.data?.total_pages
+    ? (listQuery.data?.page ?? 1) < listQuery.data.total_pages
+    : false;
+
+  const switchView = (next: GalleryView) => {
+    setView(next);
+    setSelectedProductUid(null);
+    setSelectedItem(null);
+    setPagination({
+      pageIndex: 0,
+      pageSize: next === "products" ? PRODUCTS_PER_PAGE : ITEMS_PER_PAGE,
+    });
+  };
 
   if (resumeDraft) {
     if (resumeDraft.category === "product-shoot") {
@@ -478,6 +666,7 @@ export default function MyGallery({
         onEditImage={onEditImage}
         onManualPhotoEdit={onManualPhotoEdit}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
+        onItemUpdated={setSelectedItem}
       />
     );
   }
@@ -508,28 +697,239 @@ export default function MyGallery({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={Boolean(deleteProductTarget)}
+        onOpenChange={(open) => !open && !productDeleting && setDeleteProductTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes {deleteProductTarget?.sku ? `${deleteProductTarget.sku} ` : "this product "}
+              and every product shoot, model shoot, and edited image grouped under it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={productDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={productDeleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDeleteProduct();
+              }}
+            >
+              {productDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete product"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={Boolean(assignTarget)}
+        onOpenChange={(open) => {
+          if (!open && !assigning) {
+            setAssignTarget(null);
+            setAssignProductId("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign product ID</DialogTitle>
+            <DialogDescription>
+              Group this generation under an existing product ID, or enter a new one. Items with the
+              same ID appear together in All products.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="gallery-assign-product-id">Product ID</Label>
+            <Input
+              id="gallery-assign-product-id"
+              value={assignProductId}
+              onChange={(e) => setAssignProductId(e.target.value)}
+              placeholder="e.g. AXG-0001 or RING-14"
+              maxLength={64}
+              autoComplete="off"
+              disabled={assigning}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void confirmAssignGalleryItem();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={assigning}
+              onClick={() => {
+                setAssignTarget(null);
+                setAssignProductId("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={assigning || !assignProductId.trim()}
+              onClick={() => void confirmAssignGalleryItem()}
+            >
+              {assigning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="space-y-2">
         <div className="-mx-1 flex flex-nowrap items-center gap-1 overflow-x-auto overflow-y-visible pb-2 [-webkit-overflow-scrolling:touch] md:mx-0 md:flex-wrap md:overflow-visible md:pb-0">
-          {GALLERY_CATEGORIES.map((option) => {
-            const isActive = category === option;
+          {GALLERY_VIEWS.map((option) => {
+            const isActive = view === option.id && !selectedProductUid;
             return (
               <Button
-                key={option}
+                key={option.id}
                 type="button"
                 variant={isActive ? "default" : "outline"}
                 className="shrink-0 whitespace-nowrap touch-manipulation text-xs md:text-sm"
-                onClick={() => {
-                  setCategory(option);
-                  setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-                }}
+                onClick={() => switchView(option.id)}
               >
-                {GALLERY_CATEGORY_LABELS[option]}
+                {option.label}
               </Button>
             );
           })}
         </div>
       </div>
 
+      {selectedProductUid ? (
+        <ProductDetailPanel
+          token={token}
+          query={productDetailQuery}
+          imageIndexByRow={imageIndexByRow}
+          setImageIndexByRow={setImageIndexByRow}
+          onBack={() => setSelectedProductUid(null)}
+          onOpenItem={openGalleryItem}
+          onDeleteItem={setDeleteTarget}
+          onDeleteProduct={setDeleteProductTarget}
+          onAssignItem={(item) => {
+            setAssignTarget(item);
+            setAssignProductId(item.product_sku ?? "");
+          }}
+          galleryDeleting={galleryDeleting}
+          deleteTargetUid={deleteTarget?.uid ?? null}
+          productDeleting={productDeleting}
+        />
+      ) : view === "products" ? (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-3">
+            <div className="min-w-0 text-sm text-muted-foreground">
+              {productsQuery.isFetching ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+                </span>
+              ) : productsQuery.data ? (
+                <span>
+                  {productsQuery.data.total}{" "}
+                  {productsQuery.data.total === 1 ? "product" : "products"}
+                </span>
+              ) : (
+                "—"
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2 self-stretch md:self-auto">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-10 flex-1 touch-manipulation md:min-h-0 md:flex-none"
+                disabled={!canPrev || productsQuery.isFetching}
+                onClick={() =>
+                  setPagination((prev) => ({ ...prev, pageIndex: Math.max(0, prev.pageIndex - 1) }))
+                }
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-10 flex-1 touch-manipulation md:min-h-0 md:flex-none"
+                disabled={!canNext || productsQuery.isFetching}
+                onClick={() => setPagination((prev) => ({ ...prev, pageIndex: prev.pageIndex + 1 }))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+          {productsQuery.isError ? (
+            <p className="text-sm text-destructive">
+              {(productsQuery.error as Error | undefined)?.message ?? "Failed to load products"}
+            </p>
+          ) : productsQuery.data?.items.length ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {productsQuery.data.items.map((product) => (
+                <div
+                  key={product.uid}
+                  className="overflow-hidden rounded-lg border bg-card text-left transition hover:border-primary/50"
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => setSelectedProductUid(product.uid)}
+                  >
+                    <ProductHeroThumb token={token} s3Key={product.hero_thumbnail_s3_key} />
+                    <div className="space-y-2 p-3 pb-0">
+                      <h3 className="truncate font-semibold leading-tight">{product.name}</h3>
+                      <p className="text-xs text-muted-foreground">SKU {product.sku}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {countBadge(
+                          product.product_shoot_count,
+                          "product",
+                          "bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                        )}
+                        {countBadge(
+                          product.model_shoot_count,
+                          "model",
+                          "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                        )}
+                        {countBadge(
+                          product.edited_image_count,
+                          "edited",
+                          "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                  <div className="flex justify-end p-3 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      title="Delete product"
+                      disabled={!token || productDeleting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteProductTarget(product);
+                      }}
+                    >
+                      {productDeleting && deleteProductTarget?.uid === product.uid ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : productsQuery.isFetching ? null : (
+            <p className="text-sm text-muted-foreground">
+              No products yet. Start a product shoot or model shoot to create one.
+            </p>
+          )}
+        </div>
+      ) : (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-3">
           <div className="min-w-0 text-sm text-muted-foreground">
@@ -613,6 +1013,178 @@ export default function MyGallery({
           </Table>
         </div>
       </div>
+      )}
+    </div>
+  );
+}
+
+function ProductDetailPanel({
+  token,
+  query,
+  imageIndexByRow,
+  setImageIndexByRow,
+  onBack,
+  onOpenItem,
+  onDeleteItem,
+  onDeleteProduct,
+  onAssignItem,
+  galleryDeleting,
+  deleteTargetUid,
+  productDeleting,
+}: {
+  token: string | null;
+  query: UseQueryResult<GalleryProductDetailResponse>;
+  imageIndexByRow: Record<string, number>;
+  setImageIndexByRow: Dispatch<SetStateAction<Record<string, number>>>;
+  onBack: () => void;
+  onOpenItem: (item: GalleryItem) => void;
+  onDeleteItem: (item: GalleryItem) => void;
+  onDeleteProduct: (product: GalleryProduct) => void;
+  onAssignItem: (item: GalleryItem) => void;
+  galleryDeleting: boolean;
+  deleteTargetUid: string | null;
+  productDeleting: boolean;
+}) {
+  const product = query.data?.product;
+  const sections: { title: string; items: GalleryItem[] }[] = [
+    { title: "Product shoots", items: query.data?.product_shoots ?? [] },
+    { title: "Model shoots", items: query.data?.model_shoots ?? [] },
+    { title: "Edited images", items: query.data?.edited_images ?? [] },
+  ];
+  const hasAnyItems = sections.some((section) => section.items.length > 0);
+  return (
+    <div className="space-y-5">
+      <Button type="button" variant="ghost" className="h-auto px-0" onClick={onBack}>
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        All products
+      </Button>
+      {query.isPending ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading product...
+        </div>
+      ) : query.isError || !product ? (
+        <p className="text-sm text-destructive">
+          {(query.error as Error | undefined)?.message ?? "Failed to load product"}
+        </p>
+      ) : (
+        <>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="w-full max-w-[16rem] overflow-hidden rounded-lg border">
+              <ProductHeroThumb token={token} s3Key={product.hero_thumbnail_s3_key} />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold">{product.name}</h2>
+              <p className="text-sm text-muted-foreground">SKU {product.sku}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {countBadge(
+                  product.product_shoot_count,
+                  "product",
+                  "bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                )}
+                {countBadge(
+                  product.model_shoot_count,
+                  "model",
+                  "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                )}
+                {countBadge(
+                  product.edited_image_count,
+                  "edited",
+                  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={!token || productDeleting}
+                onClick={() => onDeleteProduct(product)}
+              >
+                {productDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete product
+              </Button>
+            </div>
+          </div>
+          {sections.map((section) =>
+            section.items.length ? (
+              <div key={section.title} className="space-y-3">
+                <h3 className="text-sm font-medium">{section.title}</h3>
+                <div className="grid gap-2">
+                  {section.items.map((item) => (
+                    <div
+                      key={item.uid}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left transition hover:border-primary/50"
+                      onClick={() => onOpenItem(item)}
+                    >
+                      <GalleryImageCell
+                        token={token}
+                        s3Keys={item.image_s3_keys ?? []}
+                        captions={galleryImageCaptions(item.analysis)}
+                        rowKey={item.uid}
+                        imageIndexByRow={imageIndexByRow}
+                        setImageIndexByRow={setImageIndexByRow}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {GALLERY_CATEGORY_LABELS[item.category as GalleryCategory] ?? item.category}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Edited {formatTableDate(item.edited_at)}
+                        </p>
+                        {item.can_resume_review ? (
+                          <Badge variant="secondary" className="mt-1 w-fit">
+                            {item.generations_remaining === 1
+                              ? "1 edit left"
+                              : `${item.generations_remaining ?? 2} edits left`}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          title="Change product ID"
+                          disabled={!token || galleryDeleting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAssignItem(item);
+                          }}
+                        >
+                          <Tag className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          title="Delete gallery item"
+                          disabled={!token || galleryDeleting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteItem(item);
+                          }}
+                        >
+                          {galleryDeleting && deleteTargetUid === item.uid ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null
+          )}
+          {!hasAnyItems ? (
+            <p className="text-sm text-muted-foreground">
+              No generations grouped under this product yet.
+            </p>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

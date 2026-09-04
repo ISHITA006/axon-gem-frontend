@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -71,6 +72,7 @@ export default function UploadStudioShoot({
   const [draft, setDraft] = useState<ProductShootDraft | null>(null);
   const [activeGenerationUid, setActiveGenerationUid] = useState<string | null>(null);
   const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
+  const [productId, setProductId] = useState("");
 
   const NO_BRAND_KIT = "none";
   const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
@@ -327,6 +329,7 @@ export default function UploadStudioShoot({
     setBackgroundText("");
     setBackgroundFile(null);
     setBackgroundInputMode("description");
+    setProductId("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -336,6 +339,14 @@ export default function UploadStudioShoot({
       toast({
         title: "View required",
         description: "Select front view, side view, or both before generating.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!productId.trim()) {
+      toast({
+        title: "Product ID required",
+        description: "Enter a product ID to group this shoot in My Gallery.",
         variant: "destructive",
       });
       return;
@@ -407,6 +418,7 @@ export default function UploadStudioShoot({
         productAngleS3Key: generateFront && wantProductAngle ? selectedProductAngleS3Key : null,
         productSideAngleS3Key:
           generateSide && wantProductSideAngle ? selectedProductSideAngleS3Key : null,
+        productId: productId.trim(),
       });
       trackJob(job);
       resetFormAfterQueue();
@@ -474,6 +486,22 @@ export default function UploadStudioShoot({
         <CardTitle className="text-base">Studio Shoot</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="space-y-1.5">
+          <Label htmlFor="studio-product-id">Product ID *</Label>
+          <Input
+            id="studio-product-id"
+            value={productId}
+            onChange={(e) => setProductId(e.target.value)}
+            placeholder="e.g. AXG-0001 or RING-14"
+            maxLength={64}
+            autoComplete="off"
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Enter an existing product ID to group this shoot, or a new ID to create a product.
+          </p>
+        </div>
+
         <div className="space-y-3">
           <div>
             <p className="text-sm font-medium">Views to generate *</p>
@@ -961,6 +989,7 @@ export default function UploadStudioShoot({
           onClick={handleGenerate}
           disabled={
             !token ||
+            !productId.trim() ||
             !views ||
             !imageFile ||
             shooting ||
