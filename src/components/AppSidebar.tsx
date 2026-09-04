@@ -20,6 +20,7 @@ import {
   BarChart3,
   Settings,
   ChevronUp,
+  ListOrdered,
 } from "lucide-react";
 import {
   Sidebar,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGenerationQueueOptional } from "@/contexts/GenerationQueueContext";
 
 export type TabValue =
   | "tryon"
@@ -57,7 +59,8 @@ export type TabValue =
   | "editImage"
   | "brandKit"
   | "productBrandKit"
-  | "generationUsage";
+  | "generationUsage"
+  | "generationQueue";
 
 type NavItem = { title: string; value: TabValue; icon: React.ElementType };
 
@@ -65,6 +68,7 @@ const mainNavItems: NavItem[] = [
   { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
   { title: "Model Shoot", value: "tryon", icon: SquareUser },
   { title: "Edit Image", value: "editImage", icon: Wand2 },
+  { title: "Generation Queue", value: "generationQueue", icon: ListOrdered },
   { title: "My Gallery", value: "gallery", icon: Images },
   { title: "Catalogue", value: "catalogue", icon: LibraryBig },
 ];
@@ -94,6 +98,7 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
   const { state, setOpen } = useSidebar();
   const collapsed = state === "collapsed";
   const { logout } = useAuth();
+  const activeCount = useGenerationQueueOptional()?.activeCount ?? 0;
   const settingsTabActive = settingsTabValues.has(activeTab);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -113,6 +118,11 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
                   >
                     <item.icon className="h-4 w-4" />
                     {!collapsed && <span>{item.title}</span>}
+                    {item.value === "generationQueue" && activeCount > 0 ? (
+                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                        {activeCount}
+                      </span>
+                    ) : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, ImageIcon, Loader2, Pencil, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
 import { apiEditImageWithInstructions, downloadImage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ensureGenerationNotifyPermission,
   notifyGenerationError,
-  notifyGenerationSuccess,
 } from "@/lib/generationNotify";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
+import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type EditImageProps = {
@@ -25,6 +26,8 @@ type EditImageProps = {
   sourceImageS3Key?: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onQueued?: () => void;
+  onViewQueue?: () => void;
 };
 
 function fileFromImageBlob(blob: Blob): File {
@@ -44,8 +47,11 @@ export default function EditImage({
   sourceImageS3Key,
   onEditImage,
   onManualPhotoEdit,
+  onQueued,
+  onViewQueue,
 }: EditImageProps) {
   const { token } = useAuth();
+  const { trackJob } = useGenerationQueue();
   const { toast } = useToast();
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -58,6 +64,7 @@ export default function EditImage({
   const [resultIsObjectUrl, setResultIsObjectUrl] = useState(false);
   const [isDrawingOnSource, setIsDrawingOnSource] = useState(false);
   const [isSourcePointerDown, setIsSourcePointerDown] = useState(false);
+  const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   const sourceDrawCanvasRef = useRef<HTMLCanvasElement | null>(null);
   /** When the user picks a file from the input, ignore late completion of a prop-URL fetch. */
@@ -193,24 +200,23 @@ export default function EditImage({
     setSubmitting(true);
     void ensureGenerationNotifyPermission();
     try {
-      const data = await apiEditImageWithInstructions(token, {
+      const job = await apiEditImageWithInstructions(token, {
         editInstructions: trimmed,
         sourceImageFile: sourceFile,
         referenceImageFile: referenceFile,
       });
-      const nextUrl = data.previewUrl ?? data.objectUrl;
-      if (!nextUrl) {
-        throw new Error("No image URL returned from the server");
-      }
-      setResultUrl(nextUrl);
-      setResultS3Key(data.editedImageS3Key ?? null);
-      setResultIsObjectUrl(Boolean(data.objectUrl));
-      const readyTitle = "Image edited";
-      const readyBody = "Your edited image is shown below.";
-      toast({ title: readyTitle, description: readyBody });
-      notifyGenerationSuccess(readyTitle, readyBody);
+      trackJob(job);
+      userChoseLocalSourceRef.current = true;
+      setSourceFile(null);
+      setReferenceFile(null);
+      setInstructions("");
+      setIsDrawingOnSource(false);
+      if (sourceInputRef.current) sourceInputRef.current.value = "";
+      onQueued?.();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setQueuedNotice(queuedNoticeFromJob(job.title));
     } catch (err: unknown) {
-      const failTitle = "Edit failed";
+      const failTitle = "Could not queue this edit";
       const failBody = err instanceof Error ? err.message : "Could not edit image";
       toast({
         title: failTitle,
@@ -366,6 +372,12 @@ export default function EditImage({
   }, [isDrawingOnSource, sourcePreview]);
 
   return (
+    <div className="space-y-6">
+      <QueuedConfirmation
+        notice={queuedNotice}
+        onNoticeChange={setQueuedNotice}
+        onViewQueue={onViewQueue}
+      />
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Edit Image</CardTitle>
@@ -485,6 +497,7 @@ export default function EditImage({
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
                   userChoseLocalSourceRef.current = Boolean(f);
+                  setQueuedNotice(null);
                   setSourceFile(f);
                   setIsDrawingOnSource(false);
                   e.target.value = "";
@@ -556,7 +569,7 @@ export default function EditImage({
           {submitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Editing…
+              Adding to queue…
             </>
           ) : (
             <>
@@ -567,5 +580,6 @@ export default function EditImage({
         </Button>
       </CardContent>
     </Card>
+    </div>
   );
 }

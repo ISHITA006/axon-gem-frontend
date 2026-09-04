@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ImageIcon, Loader2, Upload } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
 import {
   apiCreateStudioShoot,
   apiListProductAngles,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import StudioShootResults from "@/components/StudioShootResults";
+import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +35,6 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ensureGenerationNotifyPermission,
   notifyGenerationError,
-  notifyGenerationSuccess,
 } from "@/lib/generationNotify";
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
@@ -42,15 +42,20 @@ import { cn } from "@/lib/utils";
 type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onViewQueue?: () => void;
 };
 
 export default function UploadStudioShoot({
   onEditImage,
   onManualPhotoEdit,
+  onViewQueue,
 }: Props) {
   const { token } = useAuth();
+  const { trackJob } = useGenerationQueue();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const jewelleryInputRef = useRef<HTMLInputElement | null>(null);
+  const sideViewInputRef = useRef<HTMLInputElement | null>(null);
+  const backgroundInputRef = useRef<HTMLInputElement | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [sideViewFile, setSideViewFile] = useState<File | null>(null);
   const [views, setViews] = useState<StudioShootViews | "">("");
@@ -65,6 +70,7 @@ export default function UploadStudioShoot({
   const [results, setResults] = useState<StudioShootResult | null>(null);
   const [draft, setDraft] = useState<ProductShootDraft | null>(null);
   const [activeGenerationUid, setActiveGenerationUid] = useState<string | null>(null);
+  const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
 
   const NO_BRAND_KIT = "none";
   const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
@@ -307,6 +313,23 @@ export default function UploadStudioShoot({
     }
   };
 
+  const resetFormAfterQueue = () => {
+    setImageFile(null);
+    setSideViewFile(null);
+    if (jewelleryInputRef.current) jewelleryInputRef.current.value = "";
+    if (sideViewInputRef.current) sideViewInputRef.current.value = "";
+    if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+    setWantProductAngle(false);
+    setSelectedProductAngleUid(null);
+    setWantProductSideAngle(false);
+    setSelectedProductSideAngleUid(null);
+    setUseCustomBackground(false);
+    setBackgroundText("");
+    setBackgroundFile(null);
+    setBackgroundInputMode("description");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleGenerate = async () => {
     if (!token) return;
     if (!views) {
@@ -367,13 +390,9 @@ export default function UploadStudioShoot({
 
     setShooting(true);
     void ensureGenerationNotifyPermission();
-    setShowResults(true);
-    setResults(null);
-    setDraft(null);
-    setActiveGenerationUid(null);
 
     try {
-      const shot = await apiCreateStudioShoot(token, imageFile, {
+      const job = await apiCreateStudioShoot(token, imageFile, {
         views,
         sideViewFile: generateSide ? sideViewFile : null,
         aspectRatio,
@@ -389,54 +408,11 @@ export default function UploadStudioShoot({
         productSideAngleS3Key:
           generateSide && wantProductSideAngle ? selectedProductSideAngleS3Key : null,
       });
-      if (generateFront && !shot.frontImageS3Key) {
-        throw new Error("Front studio shoot image key not returned from API");
-      }
-      if (generateSide && !shot.sideImageS3Key && !shot.sideError) {
-        throw new Error("Side studio shoot image key not returned from API");
-      }
-      if (!shot.frontImageS3Key && !shot.sideImageS3Key) {
-        throw new Error("Studio shoot image key not returned from API");
-      }
-
-      let frontUrl = shot.frontImageUrl ?? null;
-      if (shot.frontImageS3Key && !frontUrl) {
-        frontUrl = await getPresignedUrl(token, shot.frontImageS3Key);
-      }
-
-      let sideUrl = shot.sideImageUrl ?? null;
-      if (shot.sideImageS3Key && !sideUrl) {
-        sideUrl = await getPresignedUrl(token, shot.sideImageS3Key);
-      }
-
-      setDraft(shot.draft ?? null);
-      setActiveGenerationUid(shot.generation_uid ?? shot.draft?.latest_generation?.uid ?? null);
-      setResults({
-        ...shot,
-        frontImageUrl: frontUrl,
-        sideImageUrl: sideUrl,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
-
-      const autosaved = shot.draft?.latest_generation?.saved ?? false;
-      const readyTitle = "Your look is ready";
-      const readyBody = [
-        autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
-        "Each product shoot comes with 2 complementary edits if you’d like a change.",
-      ].join(" ");
-      toast({ title: readyTitle, description: readyBody });
-      notifyGenerationSuccess(readyTitle, readyBody);
-      if (shot.sideError) {
-        const sideTitle = "Side view failed";
-        toast({ title: sideTitle, description: shot.sideError, variant: "destructive" });
-        notifyGenerationError(sideTitle, shot.sideError);
-      }
+      trackJob(job);
+      resetFormAfterQueue();
+      setQueuedNotice(queuedNoticeFromJob(job.title));
     } catch (err: unknown) {
-      setResults(null);
-      setDraft(null);
-      setActiveGenerationUid(null);
-      setShowResults(false);
-      const failTitle = "Studio shoot failed";
+      const failTitle = "Could not queue this request";
       const failBody = err instanceof Error ? err.message : "Could not create studio shoot";
       toast({
         title: failTitle,
@@ -470,6 +446,7 @@ export default function UploadStudioShoot({
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
           onDraftChange={setDraft}
+          onViewQueue={onViewQueue}
         />
       );
     }
@@ -486,6 +463,12 @@ export default function UploadStudioShoot({
   }
 
   return (
+    <div className="space-y-6">
+      <QueuedConfirmation
+        notice={queuedNotice}
+        onNoticeChange={setQueuedNotice}
+        onViewQueue={onViewQueue}
+      />
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Studio Shoot</CardTitle>
@@ -579,10 +562,14 @@ export default function UploadStudioShoot({
                     </>
                   )}
                   <input
+                    ref={jewelleryInputRef}
                     type="file"
                     accept="image/*,.heic,.heif"
                     className="hidden"
-                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                    onChange={(e) => {
+                      setQueuedNotice(null);
+                      setImageFile(e.target.files?.[0] || null);
+                    }}
                   />
                 </label>
               </div>
@@ -612,6 +599,7 @@ export default function UploadStudioShoot({
                       </>
                     )}
                     <input
+                      ref={sideViewInputRef}
                       type="file"
                       accept="image/*,.heic,.heif"
                       className="hidden"
@@ -954,6 +942,7 @@ export default function UploadStudioShoot({
                       </>
                     )}
                     <input
+                      ref={backgroundInputRef}
                       type="file"
                       accept="image/*,.heic,.heif"
                       className="hidden"
@@ -980,9 +969,10 @@ export default function UploadStudioShoot({
           }
         >
           {shooting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {shooting ? "Generating studio shoot..." : "Generate studio shoot"}
+          {shooting ? "Adding to queue…" : "Queue studio shoot"}
         </Button>
       </CardContent>
     </Card>
+    </div>
   );
 }

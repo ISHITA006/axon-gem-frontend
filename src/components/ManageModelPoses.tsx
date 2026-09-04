@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
 import {
   apiListFemaleAdultModels,
   apiListFemaleChildModels,
@@ -7,12 +8,9 @@ import {
   apiListMaleChildModels,
   apiListPoses,
   apiListModelPosesForModel,
-  apiCreateModelPose,
-  apiUpdateModelPose,
   apiDeleteModelPose,
   apiGenerateModelPoseImage,
   apiUploadModelPoseFile,
-  modelPoseImageS3KeyFromGenerateResponse,
   getPresignedUrl,
   type ModelRecord,
   type PoseRecord,
@@ -34,6 +32,7 @@ import {
 import { Check, ImageIcon, Layers, Loader2, Sparkles, Trash2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 
 const ALL_POSES_VALUE = "__all__";
 
@@ -87,9 +86,10 @@ function posesIntoSections(poses: PoseRecord[]): PoseSections {
   return { female, male };
 }
 
-export default function ManageModelPoses() {
+export default function ManageModelPoses({ onViewQueue }: { onViewQueue?: () => void }) {
   const { token } = useAuth();
   const { toast } = useToast();
+  const { trackJob, jobs } = useGenerationQueue();
 
   const [models, setModels] = useState<ModelRecord[]>([]);
   const [poses, setPoses] = useState<PoseRecord[]>([]);
@@ -108,6 +108,7 @@ export default function ManageModelPoses() {
   const [confirmDeleteUid, setConfirmDeleteUid] = useState<string | null>(null);
   const [generatingPose, setGeneratingPose] = useState(false);
   const [uploadingPose, setUploadingPose] = useState(false);
+  const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadPoseUidRef = useRef<string | null>(null);
 
@@ -228,6 +229,16 @@ export default function ManageModelPoses() {
     fetchModelPoses();
   }, [fetchModelPoses]);
 
+  const completedPoseJobs = jobs
+    .filter((job) => job.job_type === "model_pose" && job.status === "completed")
+    .map((job) => job.uid)
+    .join(",");
+
+  useEffect(() => {
+    if (!completedPoseJobs) return;
+    void fetchModelPoses();
+  }, [completedPoseJobs, fetchModelPoses]);
+
   const handleGenerateForFilteredPose = async () => {
     if (!token || !selectedModelUid || filterPoseUid === ALL_POSES_VALUE) return;
 
@@ -240,30 +251,12 @@ export default function ManageModelPoses() {
 
     setGeneratingPose(true);
     try {
-      const genJson = await apiGenerateModelPoseImage(token, model.image_s3_key, pose.image_s3_key);
-      const imageS3Key = modelPoseImageS3KeyFromGenerateResponse(genJson);
-      const existing = rows.find((r) => r.pose_uid === filterPoseUid);
-      if (existing) {
-        await apiUpdateModelPose(token, existing.uid, {
-          model_uid: selectedModelUid,
-          pose_uid: filterPoseUid,
-          image_s3_key: imageS3Key,
-          source: "generated",
-        });
-        toast({ title: "Updated", description: "Model pose regenerated." });
-      } else {
-        await apiCreateModelPose(token, {
-          model_uid: selectedModelUid,
-          pose_uid: filterPoseUid,
-          image_s3_key: imageS3Key,
-          source: "generated",
-        });
-        toast({ title: "Created", description: "Model pose saved." });
-      }
-      await fetchModelPoses();
+      const job = await apiGenerateModelPoseImage(token, model.image_s3_key, pose.image_s3_key);
+      trackJob(job);
+      setQueuedNotice(queuedNoticeFromJob(job.title, false));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Generation failed";
-      toast({ title: "Could not create model pose", description: message, variant: "destructive" });
+      toast({ title: "Could not queue model pose", description: message, variant: "destructive" });
     } finally {
       setGeneratingPose(false);
     }
@@ -331,6 +324,11 @@ export default function ManageModelPoses() {
   return (
     <>
       <div className="space-y-6">
+        <QueuedConfirmation
+          notice={queuedNotice}
+          onNoticeChange={setQueuedNotice}
+          onViewQueue={onViewQueue}
+        />
         <Card>
           <CardHeader className="space-y-1 px-6 pb-4 pt-6 sm:px-8 sm:pb-6">
             <CardTitle className="text-lg font-semibold tracking-tight">Browse model poses</CardTitle>
@@ -528,8 +526,8 @@ export default function ManageModelPoses() {
                           <Sparkles className="mr-2 h-4 w-4" />
                         )}
                         {rows.some((r) => r.pose_uid === filterPoseUid)
-                          ? "Regenerate with Gemini"
-                          : "Generate with Gemini"}
+                          ? "Queue Gemini regeneration"
+                          : "Queue Gemini generation"}
                       </Button>
                       <Button
                         type="button"

@@ -34,6 +34,149 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
   if (!res.ok) throw new Error(await parseApiErrorMessage(res, fallback));
 }
 
+export type GenerationJobType =
+  | "model_shoot"
+  | "model_shoot_edit"
+  | "product_shoot"
+  | "product_shoot_edit"
+  | "model_pose"
+  | "image_edit";
+
+export type GenerationJobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
+
+export type GenerationJobThumbnail = {
+  label: string;
+  s3_key: string;
+};
+
+export type GenerationJob = {
+  uid: string;
+  job_type: GenerationJobType;
+  status: GenerationJobStatus;
+  title: string;
+  subtitle?: string | null;
+  payload?: Record<string, unknown> | null;
+  result?: Record<string, unknown> | null;
+  error_message?: string | null;
+  draft_uid?: string | null;
+  generation_uid?: string | null;
+  queue_position?: number | null;
+  queued?: boolean;
+  thumbnails?: GenerationJobThumbnail[] | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+};
+
+export type GenerationJobsResponse = {
+  jobs: GenerationJob[];
+  max_concurrent: number;
+  processing_count: number;
+  queued_count: number;
+  completed_visible_limit?: number;
+};
+
+export function isGenerationJob(data: unknown): data is GenerationJob {
+  if (!data || typeof data !== "object") return false;
+  const value = data as Record<string, unknown>;
+  return (
+    typeof value.uid === "string" &&
+    typeof value.job_type === "string" &&
+    typeof value.status === "string" &&
+    typeof value.title === "string"
+  );
+}
+
+export function parseGenerationJob(data: unknown, fallback = "Invalid generation job"): GenerationJob {
+  if (!isGenerationJob(data)) throw new Error(fallback);
+  return data;
+}
+
+export async function apiListGenerationJobs(token: string): Promise<GenerationJobsResponse> {
+  const res = await fetch(`${API_BASE_URL}/generation-jobs`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to load generation queue");
+  return res.json() as Promise<GenerationJobsResponse>;
+}
+
+export async function apiGetGenerationJob(token: string, jobUid: string): Promise<GenerationJob> {
+  const res = await fetch(`${API_BASE_URL}/generation-jobs/${encodeURIComponent(jobUid)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to load generation job");
+  return parseGenerationJob(await res.json());
+}
+
+export async function apiCancelGenerationJob(token: string, jobUid: string): Promise<GenerationJob> {
+  const res = await fetch(`${API_BASE_URL}/generation-jobs/${encodeURIComponent(jobUid)}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Could not cancel this job");
+  return parseGenerationJob(await res.json());
+}
+
+export async function apiDispatchGenerationJobs(token: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/generation-jobs/dispatch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+  if (signal?.aborted) return;
+  await assertOk(res, "Failed to run generation queue");
+}
+
+export function generationJobResultS3Key(job: GenerationJob): string | null {
+  const result = job.result;
+  if (!result) return null;
+  const key = result.s3_key ?? result.image_s3_key;
+  return typeof key === "string" && key ? key : null;
+}
+
+export function generationJobDraftUid(job: GenerationJob): string | null {
+  if (job.draft_uid) return job.draft_uid;
+  const draft = job.result?.draft;
+  if (draft && typeof draft === "object" && draft !== null && "uid" in draft) {
+    const uid = (draft as { uid?: unknown }).uid;
+    if (typeof uid === "string" && uid) return uid;
+  }
+  return null;
+}
+
+function payloadS3Key(payload: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function generationJobThumbnails(job: GenerationJob): GenerationJobThumbnail[] {
+  const fromApi = (job.thumbnails ?? []).filter(
+    (item): item is GenerationJobThumbnail =>
+      Boolean(item) && typeof item.label === "string" && typeof item.s3_key === "string" && Boolean(item.s3_key.trim())
+  );
+  if (fromApi.length > 0) return fromApi;
+
+  const payload = job.payload ?? {};
+  const items: GenerationJobThumbnail[] = [];
+  const add = (label: string, key: string | null) => {
+    if (key) items.push({ label, s3_key: key });
+  };
+  if (job.job_type === "model_shoot" || job.job_type === "model_shoot_edit") {
+    add("Jewellery", payloadS3Key(payload, "preview_jewellery_s3_key") ?? payloadS3Key(payload, "jewellery_s3_key"));
+    add("Model", payloadS3Key(payload, "preview_model_s3_key") ?? payloadS3Key(payload, "model_s3_key"));
+  } else if (job.job_type === "product_shoot" || job.job_type === "product_shoot_edit") {
+    add("Jewellery", payloadS3Key(payload, "preview_jewellery_s3_key") ?? payloadS3Key(payload, "jewellery_s3_key"));
+    add("Side view", payloadS3Key(payload, "preview_side_s3_key") ?? payloadS3Key(payload, "side_view_s3_key"));
+  } else if (job.job_type === "model_pose") {
+    add("Model", payloadS3Key(payload, "model_s3_key"));
+    add("Pose", payloadS3Key(payload, "pose_s3_key"));
+  } else if (job.job_type === "image_edit") {
+    add("Source", payloadS3Key(payload, "source_image_s3_key"));
+    add("Reference", payloadS3Key(payload, "reference_image_s3_key"));
+  }
+  return items;
+}
+
 export async function apiWakeServer(): Promise<void> {
   await fetch(`${API_BASE_URL}/health`).catch(() => undefined);
 }
@@ -509,7 +652,7 @@ export async function apiGenerateModelPoseImage(
   token: string,
   modelS3Key: string,
   poseS3Key: string
-): Promise<Record<string, unknown>> {
+): Promise<GenerationJob> {
   const params = new URLSearchParams({
     model_s3_key: modelS3Key,
     pose_s3_key: poseS3Key,
@@ -519,7 +662,7 @@ export async function apiGenerateModelPoseImage(
     headers: { Authorization: `Bearer ${token}` },
   });
   await assertOk(res, "Generation failed");
-  return res.json() as Promise<Record<string, unknown>>;
+  return parseGenerationJob(await res.json(), "Generation failed");
 }
 
 export async function apiGetModelPoseImages(token: string) {
@@ -685,7 +828,7 @@ export async function apiRegenerateModelShoot(
     body: formData,
   });
   await assertOk(res, "Regeneration failed");
-  return res.json() as Promise<GenerateTryOnResponse>;
+  return parseGenerationJob(await res.json(), "Could not queue this edit");
 }
 
 export async function apiSaveModelShootDraft(
@@ -814,7 +957,7 @@ export async function apiRegenerateProductShoot(
     body: formData,
   });
   await assertOk(res, "Regeneration failed");
-  return res.json() as Promise<GenerateProductShootResponse>;
+  return parseGenerationJob(await res.json(), "Could not queue this edit");
 }
 
 export async function apiSaveProductShootDraft(
@@ -963,7 +1106,7 @@ export async function apiEditImageWithInstructions(
     sourceImageFile: File;
     referenceImageFile?: File | null;
   }
-): Promise<EditImageWithInstructionsResponse> {
+): Promise<GenerationJob> {
   const formData = new FormData();
   formData.append("edit_instructions", payload.editInstructions);
   formData.append("source_image_file", await asUploadableImage(payload.sourceImageFile));
@@ -977,27 +1120,8 @@ export async function apiEditImageWithInstructions(
     body: formData,
   });
 
-  await assertOk(res, "Failed to edit image");
-
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("image/")) {
-    const blob = await res.blob();
-    return { objectUrl: URL.createObjectURL(blob) };
-  }
-
-  const data = (await res.json()) as {
-    s3_key?: string;
-    url?: string;
-  };
-
-  const editedImageS3Key = data.s3_key;
-  let previewUrl = data.url;
-
-  if (!previewUrl && editedImageS3Key) {
-    previewUrl = await getPresignedUrl(token, editedImageS3Key);
-  }
-
-  return { editedImageS3Key, previewUrl };
+  await assertOk(res, "Failed to queue image edit");
+  return parseGenerationJob(await res.json(), "Failed to queue image edit");
 }
 
 export type CatalogueSortBy = "updated_at" | "created_at" | "name" | "item_code";
@@ -1282,88 +1406,72 @@ export async function apiGenerateTryOn(
   };
 
   let jewelleryS3Key: string | null = null;
-  let jewelleryS3KeyIsEphemeral = false;
   let placementMaskS3Key: string | null = null;
   let closeUpPlacementMaskS3Key: string | null = null;
 
-  try {
-    const existingJewellery = options?.existingJewelleryS3Key?.trim();
-    if (existingJewellery) {
-      jewelleryS3Key = existingJewellery;
-    } else {
-      if (!jewelleryFile) {
-        throw new Error("Jewellery image required");
-      }
-      jewelleryS3Key = await uploadJewelleryImage(jewelleryFile);
-      jewelleryS3KeyIsEphemeral = true;
+  const existingJewellery = options?.existingJewelleryS3Key?.trim();
+  if (existingJewellery) {
+    jewelleryS3Key = existingJewellery;
+  } else {
+    if (!jewelleryFile) {
+      throw new Error("Jewellery image required");
     }
-
-    const poseSelected = Boolean(options?.poseSelected);
-    const modelPoseS3Key = options?.modelPoseS3Key?.trim();
-    if (poseSelected && !modelPoseS3Key) {
-      throw new Error("Model pose image is required when pose selection is enabled");
-    }
-    const effectiveModelS3Key = poseSelected && modelPoseS3Key ? modelPoseS3Key : modelS3Key;
-
-    const generateCloseUp = views === "close_up" || views === "both";
-    const params = new URLSearchParams({
-      model_s3_key: effectiveModelS3Key,
-      jewellery_s3_key: jewelleryS3Key,
-      views,
-      generate_close_up: generateCloseUp ? "true" : "false",
-      pose_selected: poseSelected ? "true" : "false",
-      aspect_ratio: options?.aspectRatio ?? "2:3",
-      output_quality: options?.outputQuality ?? "1K",
-    });
-    const brandKitUid = options?.brandKitUid?.trim();
-    if (brandKitUid) params.set("brand_kit_uid", brandKitUid);
-    const backgroundS3Key = options?.backgroundS3Key?.trim();
-    if (backgroundS3Key) params.set("background_s3_key", backgroundS3Key);
-    const measurements = (options?.dimensions ?? []).filter(
-      (m) => Number.isFinite(m.value) && m.value > 0
-    );
-    if (measurements.length) {
-      params.set("dimensions", JSON.stringify({ measurements }));
-    }
-    const closeUpPoseS3Key = options?.closeUpPoseS3Key?.trim();
-    if (generateCloseUp && closeUpPoseS3Key) {
-      params.set("close_up_pose_s3_key", closeUpPoseS3Key);
-    }
-    const clothingUid = options?.clothingUid?.trim();
-    if (clothingUid) {
-      params.set("clothing_uid", clothingUid);
-    }
-    const placementMask = options?.placementMask;
-    if (placementMask && placementMask.size > 0) {
-      placementMaskS3Key = await uploadPlacementMask(placementMask);
-      params.set("placement_mask_s3_key", placementMaskS3Key);
-    }
-    const closeUpPlacementMask = options?.closeUpPlacementMask;
-    if (generateCloseUp && closeUpPlacementMask && closeUpPlacementMask.size > 0) {
-      closeUpPlacementMaskS3Key = await uploadPlacementMask(closeUpPlacementMask);
-      params.set("close_up_placement_mask_s3_key", closeUpPlacementMaskS3Key);
-    }
-
-    const res = await fetch(`${API_BASE_URL}/generate-jewellery-try-on-images?${params.toString()}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    await assertOk(res, "Generation failed");
-
-    return res.json() as Promise<GenerateTryOnResponse>;
-  } finally {
-    // Cleanup temporary flatlay uploads only (not caller-supplied catalogue keys).
-    if (jewelleryS3Key && jewelleryS3KeyIsEphemeral) {
-      await apiDeleteS3Object(token, jewelleryS3Key).catch(() => null);
-    }
-    if (placementMaskS3Key) {
-      await apiDeleteS3Object(token, placementMaskS3Key).catch(() => null);
-    }
-    if (closeUpPlacementMaskS3Key) {
-      await apiDeleteS3Object(token, closeUpPlacementMaskS3Key).catch(() => null);
-    }
+    jewelleryS3Key = await uploadJewelleryImage(jewelleryFile);
   }
+
+  const poseSelected = Boolean(options?.poseSelected);
+  const modelPoseS3Key = options?.modelPoseS3Key?.trim();
+  if (poseSelected && !modelPoseS3Key) {
+    throw new Error("Model pose image is required when pose selection is enabled");
+  }
+  const effectiveModelS3Key = poseSelected && modelPoseS3Key ? modelPoseS3Key : modelS3Key;
+
+  const generateCloseUp = views === "close_up" || views === "both";
+  const params = new URLSearchParams({
+    model_s3_key: effectiveModelS3Key,
+    jewellery_s3_key: jewelleryS3Key,
+    views,
+    generate_close_up: generateCloseUp ? "true" : "false",
+    pose_selected: poseSelected ? "true" : "false",
+    aspect_ratio: options?.aspectRatio ?? "2:3",
+    output_quality: options?.outputQuality ?? "1K",
+  });
+  const brandKitUid = options?.brandKitUid?.trim();
+  if (brandKitUid) params.set("brand_kit_uid", brandKitUid);
+  const backgroundS3Key = options?.backgroundS3Key?.trim();
+  if (backgroundS3Key) params.set("background_s3_key", backgroundS3Key);
+  const measurements = (options?.dimensions ?? []).filter(
+    (m) => Number.isFinite(m.value) && m.value > 0
+  );
+  if (measurements.length) {
+    params.set("dimensions", JSON.stringify({ measurements }));
+  }
+  const closeUpPoseS3Key = options?.closeUpPoseS3Key?.trim();
+  if (generateCloseUp && closeUpPoseS3Key) {
+    params.set("close_up_pose_s3_key", closeUpPoseS3Key);
+  }
+  const clothingUid = options?.clothingUid?.trim();
+  if (clothingUid) {
+    params.set("clothing_uid", clothingUid);
+  }
+  const placementMask = options?.placementMask;
+  if (placementMask && placementMask.size > 0) {
+    placementMaskS3Key = await uploadPlacementMask(placementMask);
+    params.set("placement_mask_s3_key", placementMaskS3Key);
+  }
+  const closeUpPlacementMask = options?.closeUpPlacementMask;
+  if (generateCloseUp && closeUpPlacementMask && closeUpPlacementMask.size > 0) {
+    closeUpPlacementMaskS3Key = await uploadPlacementMask(closeUpPlacementMask);
+    params.set("close_up_placement_mask_s3_key", closeUpPlacementMaskS3Key);
+  }
+
+  const res = await fetch(`${API_BASE_URL}/generate-jewellery-try-on-images?${params.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  await assertOk(res, "Generation failed");
+  return parseGenerationJob(await res.json(), "Generation failed");
 }
 
 export async function apiGetTryOnImages(token: string) {
@@ -1578,7 +1686,7 @@ export async function apiCreateStudioShoot(
   token: string,
   jewelleryFile: File,
   options: ApiCreateStudioShootOptions,
-): Promise<StudioShootResult> {
+): Promise<GenerationJob> {
   const views = options.views;
   const generateSide = views === "side" || views === "both";
 
@@ -1662,46 +1770,7 @@ export async function apiCreateStudioShoot(
     }
   }
 
-  const data = (await res.json()) as {
-    status?: "success" | "partial";
-    front_image_s3_key?: string;
-    front_image_url?: string;
-    front_error?: string | null;
-    side_image_s3_key?: string | null;
-    side_image_url?: string | null;
-    side_error?: string | null;
-    cleaned_image_s3_key?: string;
-    image_s3_key?: string;
-    s3_key?: string;
-    preview_url?: string;
-    image_url?: string;
-    url?: string;
-    fidelity_verified?: boolean;
-    mismatches?: string[];
-    notes?: string | null;
-    suggested_edit_prompt?: string | null;
-    draft?: ProductShootDraft | null;
-    generation_uid?: string | null;
-  };
-
-  const frontImageS3Key = data.front_image_s3_key || data.cleaned_image_s3_key || data.image_s3_key || data.s3_key || null;
-  const frontImageUrl = data.front_image_url || data.preview_url || data.image_url || data.url || null;
-
-  return {
-    status: data.status ?? "success",
-    frontImageS3Key,
-    frontImageUrl,
-    frontError: data.front_error ?? null,
-    sideImageS3Key: data.side_image_s3_key ?? null,
-    sideImageUrl: data.side_image_url ?? null,
-    sideError: data.side_error ?? null,
-    fidelity_verified: data.fidelity_verified,
-    mismatches: data.mismatches,
-    notes: data.notes,
-    suggested_edit_prompt: data.suggested_edit_prompt,
-    draft: data.draft ?? null,
-    generation_uid: data.generation_uid ?? null,
-  };
+  return parseGenerationJob(await res.json(), "Failed to queue studio shoot");
 }
 
 export async function apiGetNextStudioShootCode(token: string) {

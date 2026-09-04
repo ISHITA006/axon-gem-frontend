@@ -22,6 +22,7 @@ import EditImage from "@/components/EditImage";
 import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
 import GenerationUsage from "@/components/GenerationUsage";
+import GenerationQueue from "@/components/GenerationQueue";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
@@ -75,6 +76,8 @@ export default function Index() {
                 imageUrl={tryOnJewellery?.imageUrl}
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onQueued={() => setTryOnJewellery(null)}
+                onViewQueue={() => setActiveTab("generationQueue")}
               />
             )}
 
@@ -101,6 +104,14 @@ export default function Index() {
             )}
 
             {activeTab === "generationUsage" && <GenerationUsage />}
+            {activeTab === "generationQueue" && (
+              <GenerationQueue
+                onEditImage={handleEditImage}
+                onManualPhotoEdit={handleManualPhotoEdit}
+                onOpenModelPoses={() => setActiveTab("modelPoses")}
+                onOpenGallery={() => setActiveTab("gallery")}
+              />
+            )}
             {activeTab === "gallery" && (
               <MyGallery
                 onEditImage={handleEditImage}
@@ -118,6 +129,7 @@ export default function Index() {
               <UploadStudioShoot
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onViewQueue={() => setActiveTab("generationQueue")}
               />
             )}
             {activeTab === "brandKit" && <BrandKit />}
@@ -128,6 +140,8 @@ export default function Index() {
                 sourceImageS3Key={editImage?.s3Key ?? null}
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onQueued={() => setEditImage(null)}
+                onViewQueue={() => setActiveTab("generationQueue")}
               />
             )}
             {activeTab === "models" && <ManageModels />}
@@ -136,7 +150,9 @@ export default function Index() {
             {activeTab === "closeUpPoses" && <ManageCloseUpPoses />}
             {activeTab === "productAngles" && <ManageProductAngles />}
             {activeTab === "productSideAngles" && <ManageProductSideAngles />}
-            {activeTab === "modelPoses" && <ManageModelPoses />}
+            {activeTab === "modelPoses" && (
+              <ManageModelPoses onViewQueue={() => setActiveTab("generationQueue")} />
+            )}
             {activeTab === "backgrounds" && <ManageBackgrounds />}
             {activeTab === "catalogViewerManagement" && <ManageCatalogViewers />}
           </main>

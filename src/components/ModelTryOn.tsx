@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
 import {
   apiListFemaleAdultModels,
   apiListFemaleChildModels,
@@ -36,6 +36,7 @@ import {
 } from "@/lib/api";
 import TryOnResults from "@/components/TryOnResults";
 import ModelShootReviewSession from "@/components/ModelShootReviewSession";
+import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -57,7 +58,6 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ensureGenerationNotifyPermission,
   notifyGenerationError,
-  notifyGenerationSuccess,
 } from "@/lib/generationNotify";
 import { toBrowserDecodedImageFile } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
@@ -79,6 +79,9 @@ export interface ModelTryOnProps {
   imageUrl?: string;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  /** Clear gallery-sourced jewellery after a request is queued. */
+  onQueued?: () => void;
+  onViewQueue?: () => void;
 }
 
 const EMPTY_MODEL_SECTIONS: ModelSections = {
@@ -150,15 +153,24 @@ function makeDimensionRow(field?: Partial<PresetField>): DimensionRow {
   };
 }
 
-export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhotoEdit }: ModelTryOnProps) {
+export default function ModelTryOn({
+  s3Key,
+  imageUrl,
+  onEditImage,
+  onManualPhotoEdit,
+  onQueued,
+  onViewQueue,
+}: ModelTryOnProps) {
   const { token } = useAuth();
+  const { trackJob } = useGenerationQueue();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const clothingFileRef = useRef<File | null>(null);
+  const jewelleryInputRef = useRef<HTMLInputElement | null>(null);
   const [clothingFile, setClothingFile] = useState<File | null>(null);
   const [clothingPreview, setClothingPreview] = useState<string | null>(null);
   const [clothingExternalS3Key, setClothingExternalS3Key] = useState<string | null>(null);
+  const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
 
   clothingFileRef.current = clothingFile;
   const [views, setViews] = useState<ModelShootViews>("front");
@@ -572,6 +584,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
 
   const handleFileSelect = async (file: File | null) => {
     if (!file) return;
+    setQueuedNotice(null);
     setFrontImageLoading(true);
     try {
       const decoded = await toBrowserDecodedImageFile(file);
@@ -607,6 +620,34 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
     } else if (usePlacementShade) {
       setWantCloseUpPose(true);
     }
+  };
+
+  const resetFormAfterQueue = () => {
+    setClothingFile(null);
+    setClothingExternalS3Key(null);
+    setClothingPreview((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (jewelleryInputRef.current) jewelleryInputRef.current.value = "";
+    setSelectedModelUid(null);
+    setWantModelPose(false);
+    setSelectedModelPoseUid(null);
+    setWantCloseUpPose(false);
+    setSelectedCloseUpPoseUid(null);
+    setUseClothing(false);
+    setSelectedClothingUid(null);
+    setUsePlacementShade(false);
+    setPlacementHasPaint(false);
+    setCloseUpPlacementHasPaint(false);
+    placementShadeRef.current?.clear();
+    closeUpPlacementShadeRef.current?.clear();
+    setUseBackground(false);
+    setSelectedBackground(null);
+    setUseDimensions(false);
+    setDimensionRows([]);
+    onQueued?.();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleGenerate = async () => {
@@ -700,13 +741,8 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
     }
     setGenerating(true);
     void ensureGenerationNotifyPermission();
-    setResults(null);
-    setDraft(null);
-    setActiveGenerationUid(null);
-    setProgressLabel(null);
-    setShowResults(true);
     try {
-      const data = await apiGenerateTryOn(
+      const job = await apiGenerateTryOn(
         token,
         clothingExternalS3Key ? null : clothingFile,
         selectedModel.image_s3_key,
@@ -726,42 +762,14 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
           ...(clothingExternalS3Key ? { existingJewelleryS3Key: clothingExternalS3Key } : {}),
         }
       );
-      const includeFront = generateFront;
-      const includeCloseUp = generateCloseUp;
-      const frontKey = includeFront ? data.front_image_s3_key ?? undefined : undefined;
-      const closeUpKey = includeCloseUp ? data.close_up_image_s3_key ?? undefined : undefined;
-      if (includeFront && !frontKey) {
-        throw new Error("Regular view was not produced. Please try again.");
-      }
-      if (includeCloseUp && !closeUpKey) {
-        throw new Error("Close-up view was not produced. Please try again.");
-      }
-      const frontUrl = frontKey ? await getPresignedUrl(token, frontKey) : undefined;
-      const closeUpUrl = closeUpKey ? await getPresignedUrl(token, closeUpKey) : undefined;
-      setDraft(data.draft ?? null);
-      setActiveGenerationUid(data.generation_uid ?? data.draft?.latest_generation?.uid ?? null);
-      setResults({
-        ...(frontUrl && frontKey ? { front: frontUrl, frontKey } : {}),
-        ...(closeUpUrl && closeUpKey ? { closeUp: closeUpUrl, closeUpKey } : {}),
-        analysis: data.analysis ?? null,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
-      const autosaved = data.draft?.latest_generation?.saved ?? false;
-      const readyTitle = "Your look is ready";
-      const readyBody = [
-        autosaved ? "Saved to this shoot in your gallery." : "It is not in the gallery yet.",
-        views === "both"
-          ? "Each view comes with 2 complementary edits if you’d like a change."
-          : "Each model shoot comes with 2 complementary edits if you’d like a change.",
-      ].join(" ");
-      toast({ title: readyTitle, description: readyBody });
-      notifyGenerationSuccess(readyTitle, readyBody);
+      trackJob(job);
+      resetFormAfterQueue();
+      setQueuedNotice(queuedNoticeFromJob(job.title));
     } catch (err) {
-      const failTitle = "Generation Failed";
+      const failTitle = "Could not queue this request";
       const failBody = errorMessage(err);
       toast({ title: failTitle, description: failBody, variant: "destructive" });
       notifyGenerationError(failTitle, failBody);
-      setShowResults(false);
     } finally {
       setGenerating(false);
       setProgressLabel(null);
@@ -789,6 +797,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
           onDraftChange={setDraft}
+          onViewQueue={onViewQueue}
         />
       );
     }
@@ -814,6 +823,11 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
 
   return (
     <div className="space-y-6">
+      <QueuedConfirmation
+        notice={queuedNotice}
+        onNoticeChange={setQueuedNotice}
+        onViewQueue={onViewQueue}
+      />
       {/* Upload Section */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -838,6 +852,7 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
                 </>
               )}
               <input
+                ref={jewelleryInputRef}
                 type="file"
                 accept="image/*,.heic,.heif"
                 className="hidden"
@@ -1594,7 +1609,8 @@ export default function ModelTryOn({ s3Key, imageUrl, onEditImage, onManualPhoto
           }
           className="min-w-[220px]"
         >
-          Generate Try-On Images
+          {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          {generating ? "Adding to queue…" : "Queue try-on generation"}
         </Button>
       </div>
     </div>

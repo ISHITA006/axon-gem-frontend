@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import TryOnResults from "@/components/TryOnResults";
+import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { useToast } from "@/hooks/use-toast";
+import { useGenerationQueueOptional } from "@/contexts/GenerationQueueContext";
 import {
   apiGetModelShootDraft,
   apiRegenerateModelShoot,
@@ -18,7 +20,6 @@ import {
 import {
   ensureGenerationNotifyPermission,
   notifyGenerationError,
-  notifyGenerationSuccess,
 } from "@/lib/generationNotify";
 import { applyViewEditProgressLabel, modelShootTracksCloseUp, modelShootTracksFront, modelShootViewBudget, resolveModelShootViews } from "@/lib/modelShootCopy";
 
@@ -43,6 +44,7 @@ type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onDraftChange?: (draft: ModelShootDraft) => void;
+  onViewQueue?: () => void;
 };
 
 function errorMessage(err: unknown): string {
@@ -62,9 +64,11 @@ export default function ModelShootReviewSession({
   onEditImage,
   onManualPhotoEdit,
   onDraftChange,
+  onViewQueue,
 }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const queue = useGenerationQueueOptional();
   const [draft, setDraft] = useState<ModelShootDraft | null>(
     initialDraft?.uid === draftUid ? initialDraft : null
   );
@@ -80,6 +84,7 @@ export default function ModelShootReviewSession({
   const [loadingDraft, setLoadingDraft] = useState(
     !initialDraft || initialDraft.uid !== draftUid || !initialResults
   );
+  const [queuedNotice, setQueuedNotice] = useState<QueuedNotice | null>(null);
   const wasActiveRef = useRef(isActive);
 
   const activeGeneration = useMemo(() => {
@@ -163,6 +168,45 @@ export default function ModelShootReviewSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, draftUid, isActive]);
 
+  const pendingEdit =
+    queue?.jobs.some(
+      (job) =>
+        job.draft_uid === draftUid &&
+        (job.status === "queued" || job.status === "processing") &&
+        job.job_type === "model_shoot_edit"
+    ) ?? false;
+
+  const seenJobKeys = useRef<Set<string>>(new Set());
+  const jobsPrimed = useRef(false);
+  useEffect(() => {
+    jobsPrimed.current = false;
+    seenJobKeys.current.clear();
+  }, [draftUid]);
+  useEffect(() => {
+    if (!queue) return;
+    if (!jobsPrimed.current) {
+      for (const job of queue.jobs) {
+        seenJobKeys.current.add(`${job.uid}:${job.status}`);
+      }
+      jobsPrimed.current = true;
+      return;
+    }
+    for (const job of queue.jobs) {
+      if (job.draft_uid !== draftUid || job.job_type !== "model_shoot_edit") continue;
+      const key = `${job.uid}:${job.status}`;
+      if (seenJobKeys.current.has(key)) continue;
+      seenJobKeys.current.add(key);
+      if (job.status === "completed") {
+        void loadDraft(draftUid, job.generation_uid);
+        setProgressLabel(null);
+        void queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
+      }
+      if (job.status === "failed") {
+        setProgressLabel(null);
+      }
+    }
+  }, [queue, queue?.jobs, draftUid, loadDraft, queryClient]);
+
   const handleSelectGeneration = async (generationUid: string) => {
     const generation = draft?.generations.find((gen) => gen.uid === generationUid);
     if (!generation) return;
@@ -189,7 +233,7 @@ export default function ModelShootReviewSession({
       )}`
     );
     try {
-      const data = jewelleryReference
+      const job = jewelleryReference
         ? await apiRegenerateModelShoot(
             token,
             draft.uid,
@@ -199,34 +243,16 @@ export default function ModelShootReviewSession({
             jewelleryReference
           )
         : await apiRegenerateModelShoot(token, draft.uid, editPrompt, activeGenerationUid, editView);
-      const nextDraft = data.draft ?? null;
-      if (nextDraft) applyDraft(nextDraft);
-      const latest =
-        nextDraft?.generations.find((gen) => gen.uid === data.generation_uid) ??
-        nextDraft?.latest_generation ??
-        null;
-      const produced =
-        editView === "front" ? Boolean(latest?.front_image_s3_key) : Boolean(latest?.close_up_image_s3_key);
-      if (!latest || !produced) {
-        throw new Error(`${viewLabel} was not produced. Please try again.`);
-      }
-      await showGeneration(latest, data.analysis ?? nextDraft?.analysis ?? null, nextDraft?.views);
-      await queryClient.invalidateQueries({ queryKey: ["gallery-items"] });
-      const viewName = editView === "front" ? "regular view" : "close-up view";
-      const readyTitle = `${viewLabel} updated`;
-      const readyBody = latest.saved
-        ? `The new ${viewName} is ready and saved to this shoot.`
-        : `The new ${viewName} is ready. It is not in the gallery yet.`;
-      toast({ title: readyTitle, description: readyBody });
-      notifyGenerationSuccess(readyTitle, readyBody);
+      queue?.trackJob(job);
+      setQueuedNotice(queuedNoticeFromJob(job.title, false));
     } catch (err) {
-      const failTitle = "Could not apply this edit";
+      const failTitle = "Could not queue this edit";
       const failBody = errorMessage(err);
       toast({ title: failTitle, description: failBody, variant: "destructive" });
       notifyGenerationError(failTitle, failBody);
+      setProgressLabel(null);
     } finally {
       setRegenerating(false);
-      setProgressLabel(null);
     }
   };
 
@@ -246,6 +272,12 @@ export default function ModelShootReviewSession({
   };
 
   return (
+    <div className="space-y-6">
+      <QueuedConfirmation
+        notice={queuedNotice}
+        onNoticeChange={setQueuedNotice}
+        onViewQueue={onViewQueue}
+      />
     <TryOnResults
       loading={loading || loadingDraft}
       results={results}
@@ -259,10 +291,11 @@ export default function ModelShootReviewSession({
       onSelectGeneration={handleSelectGeneration}
       onRegenerate={handleRegenerate}
       onSaveGeneration={handleSaveGeneration}
-      regenerating={regenerating}
+      regenerating={regenerating || pendingEdit}
       saving={savingDraft}
       progressLabel={progressLabel}
       loadingTitle={loadingDraft && !loading && !regenerating ? "Loading..." : undefined}
     />
+    </div>
   );
 }
