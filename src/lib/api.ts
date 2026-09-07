@@ -1959,7 +1959,7 @@ export async function apiChangeBackgroundColour(
   token: string,
   imageS3Key: string,
   backgroundColourHex: string,
-  options?: { saveToGallery?: boolean }
+  options?: { saveToGallery?: boolean; backgroundNoise?: number }
 ): Promise<{ detail: string; s3_key: string; url: string }> {
   // Backend expects a bare 6-digit hex (e.g. "#F5F5F5"), not a "name (#hex)" string.
   const params = new URLSearchParams({
@@ -1968,6 +1968,10 @@ export async function apiChangeBackgroundColour(
   });
   if (options?.saveToGallery !== undefined) {
     params.set("save_to_gallery", String(options.saveToGallery));
+  }
+  // 0–100; raise if original-plate texture is being kept as a shadow.
+  if (options?.backgroundNoise !== undefined) {
+    params.set("background_noise", String(options.backgroundNoise));
   }
   const res = await fetch(`${API_BASE_URL}/change-background-colour?${params.toString()}`, {
     method: "POST",

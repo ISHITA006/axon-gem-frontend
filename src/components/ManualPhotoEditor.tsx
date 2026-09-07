@@ -14,6 +14,7 @@ import {
   Pipette,
   RotateCcw,
   Save,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,6 +77,13 @@ const TOLERANCE_OPTIONS: { value: number; label: string; hint: string }[] = [
   { value: 6, label: "Strict", hint: "Only near-exact metal tones — protects nearby stones" },
   { value: 12, label: "Balanced", hint: "Default — normal lighting variation on any metal" },
   { value: 24, label: "Broad", hint: "Catches colour-shifted or oxidised metal" },
+];
+
+const BACKGROUND_NOISE_DEFAULT = 15;
+const BACKGROUND_NOISE_OPTIONS: { value: number; label: string; hint: string }[] = [
+  { value: 8, label: "Clean", hint: "Keep faint real shadows — for a smooth studio plate" },
+  { value: BACKGROUND_NOISE_DEFAULT, label: "Normal", hint: "Default — typical studio background" },
+  { value: 40, label: "Noisy", hint: "Ignore mottling and texture on the original plate" },
 ];
 
 const METAL_OVERLAY_STROKE = "rgba(34, 197, 94, 0.55)";
@@ -220,6 +228,7 @@ export default function ManualPhotoEditor({
   const [bgHex, setBgHex] = useState("#F8F8F8");
   const [bgName, setBgName] = useState("whitesmoke");
   const [bgNameLoading, setBgNameLoading] = useState(false);
+  const [backgroundNoise, setBackgroundNoise] = useState(BACKGROUND_NOISE_DEFAULT);
 
   // Metal controls
   const [metalHex, setMetalHex] = useState("#B76E79");
@@ -732,7 +741,7 @@ export default function ManualPhotoEditor({
         token,
         workingS3Key,
         `#${cleanBgHex.toUpperCase()}`,
-        { saveToGallery: false }
+        { saveToGallery: false, backgroundNoise }
       );
       await applyWorkingResult(res);
       toast({ title: "Applied", description: "Background updated. Continue editing or Save." });
@@ -899,6 +908,39 @@ export default function ManualPhotoEditor({
     onBack();
   };
 
+  const hasAppliedEdits = dirty || editCount > 0 || workingS3Key !== s3Key;
+
+  const handleRejectAllEdits = () => {
+    if (!hasAppliedEdits) return;
+    const ok = window.confirm(
+      "Discard all applied edits and start again from the original image? Anything already saved to the gallery is kept."
+    );
+    if (!ok) return;
+    setWorkingS3Key(s3Key);
+    setWorkingUrl(imageUrl);
+    setDirty(false);
+    setSaved(false);
+    setSavedS3Key(null);
+    setEditCount(0);
+    setShowOriginal(false);
+    setPreviewKey((k) => k + 1);
+    pickingActiveRef.current = false;
+    setPickingSource(false);
+    setHoverSample(null);
+    setSelectingJewelleryArea(false);
+    setJewelleryRegion(null);
+    setJewelleryDrag(null);
+    jewelleryDragStartRef.current = null;
+    segmentedAlphaKeysRef.current = new Set();
+    pendingAlphaKeyRef.current = null;
+    setGeneratingPhase("applying");
+    clearPaint();
+    toast({
+      title: "Edits discarded",
+      description: "Working from the original image again. Apply a new edit when you are ready.",
+    });
+  };
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (showOriginal) return;
     const point = getCanvasPoint(event);
@@ -968,6 +1010,17 @@ export default function ManualPhotoEditor({
               {dirty ? " · unsaved" : saved ? " · saved" : ""}
             </span>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={handleRejectAllEdits}
+            disabled={!hasAppliedEdits}
+            title="Discard applied edits and start again from the original"
+          >
+            <Undo2 className="h-4 w-4" /> Reject all edits
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -1146,7 +1199,8 @@ export default function ManualPhotoEditor({
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Apply background, metal, blur merge, or shadow soften as many times as you like.
-              Edits stack on the latest result. Save only when you are done.
+              Edits stack on the latest result. Reject all edits to start again from the original.
+              Save only when you are done.
             </p>
 
             <Tabs
@@ -1233,6 +1287,39 @@ export default function ManualPhotoEditor({
                       />
                     ))}
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <Label>Background noise</Label>
+                    <span className="text-sm text-muted-foreground">{backgroundNoise}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Raise if texture from the original background is being kept as a shadow.
+                    Lower to keep fainter real shadows.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {BACKGROUND_NOISE_OPTIONS.map((opt) => (
+                      <Button
+                        key={opt.value}
+                        type="button"
+                        size="sm"
+                        variant={backgroundNoise === opt.value ? "default" : "outline"}
+                        onClick={() => setBackgroundNoise(opt.value)}
+                        title={opt.hint}
+                        disabled={showOriginal}
+                      >
+                        {opt.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <Slider
+                    value={[backgroundNoise]}
+                    onValueChange={(v) => setBackgroundNoise(v[0] ?? BACKGROUND_NOISE_DEFAULT)}
+                    min={0}
+                    max={100}
+                    step={1}
+                    disabled={showOriginal}
+                  />
                 </div>
                 <Button
                   className="w-full"
