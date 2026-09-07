@@ -1955,12 +1955,21 @@ export async function apiGetColourName(token: string, hex: string): Promise<{ na
   return res.json();
 }
 
+export type ChangeBackgroundColourResult =
+  | { status: "needs_shadow_keep"; detail: string }
+  | { detail: string; s3_key: string; url: string; status?: string };
+
 export async function apiChangeBackgroundColour(
   token: string,
   imageS3Key: string,
   backgroundColourHex: string,
-  options?: { saveToGallery?: boolean; backgroundNoise?: number }
-): Promise<{ detail: string; s3_key: string; url: string }> {
+  options?: {
+    saveToGallery?: boolean;
+    backgroundNoise?: number;
+    keepShadowMask?: Blob;
+    confirmNoisyBackground?: boolean;
+  }
+): Promise<ChangeBackgroundColourResult> {
   // Backend expects a bare 6-digit hex (e.g. "#F5F5F5"), not a "name (#hex)" string.
   const params = new URLSearchParams({
     image_s3_key: imageS3Key,
@@ -1973,10 +1982,21 @@ export async function apiChangeBackgroundColour(
   if (options?.backgroundNoise !== undefined) {
     params.set("background_noise", String(options.backgroundNoise));
   }
-  const res = await fetch(`${API_BASE_URL}/change-background-colour?${params.toString()}`, {
+  if (options?.confirmNoisyBackground) {
+    params.set("confirm_noisy_background", "true");
+  }
+
+  const init: RequestInit = {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-  });
+  };
+  if (options?.keepShadowMask) {
+    const form = new FormData();
+    form.append("user_mask", options.keepShadowMask, "user_mask.png");
+    init.body = form;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/change-background-colour?${params.toString()}`, init);
   await assertOk(res, "Failed to change background colour");
   return res.json();
 }

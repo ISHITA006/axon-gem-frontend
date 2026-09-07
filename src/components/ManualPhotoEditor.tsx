@@ -43,6 +43,10 @@ function isBrushTool(tool: ManualEditTool): boolean {
   return tool === "blur" || tool === "shadow";
 }
 
+function showBrushOverlay(tool: ManualEditTool, keepingShadows: boolean): boolean {
+  return isBrushTool(tool) || (keepingShadows && tool === "background");
+}
+
 interface ManualPhotoEditorProps {
   s3Key: string;
   imageUrl: string;
@@ -88,6 +92,7 @@ const BACKGROUND_NOISE_OPTIONS: { value: number; label: string; hint: string }[]
 
 const METAL_OVERLAY_STROKE = "rgba(34, 197, 94, 0.55)";
 const SHADOW_OVERLAY_STROKE = "rgba(251, 146, 60, 0.55)";
+const KEEP_SHADOW_OVERLAY_STROKE = "rgba(139, 92, 246, 0.55)";
 
 function normalizeHex(value: string): string {
   const m = value.trim().replace(/^#/, "").match(/^([0-9A-Fa-f]{0,6})/);
@@ -229,6 +234,7 @@ export default function ManualPhotoEditor({
   const [bgName, setBgName] = useState("whitesmoke");
   const [bgNameLoading, setBgNameLoading] = useState(false);
   const [backgroundNoise, setBackgroundNoise] = useState(BACKGROUND_NOISE_DEFAULT);
+  const [keepingShadows, setKeepingShadows] = useState(false);
 
   // Metal controls
   const [metalHex, setMetalHex] = useState("#B76E79");
@@ -294,6 +300,7 @@ export default function ManualPhotoEditor({
     segmentedAlphaKeysRef.current = new Set();
     pendingAlphaKeyRef.current = null;
     setGeneratingPhase("applying");
+    setKeepingShadows(false);
   }, [s3Key, imageUrl, initialTool]);
 
   useEffect(() => {
@@ -586,6 +593,7 @@ export default function ManualPhotoEditor({
     setEditCount((n) => n + 1);
     setShowOriginal(false);
     setPreviewKey((k) => k + 1);
+    setKeepingShadows(false);
     clearPaint();
   };
 
@@ -598,10 +606,14 @@ export default function ManualPhotoEditor({
     octx.clearRect(0, 0, overlay.width, overlay.height);
     octx.drawImage(mask, 0, 0);
     octx.globalCompositeOperation = "source-in";
-    octx.fillStyle = tool === "shadow" ? SHADOW_OVERLAY_STROKE : METAL_OVERLAY_STROKE;
+    octx.fillStyle = keepingShadows
+      ? KEEP_SHADOW_OVERLAY_STROKE
+      : tool === "shadow"
+        ? SHADOW_OVERLAY_STROKE
+        : METAL_OVERLAY_STROKE;
     octx.fillRect(0, 0, overlay.width, overlay.height);
     octx.globalCompositeOperation = "source-over";
-  }, [tool]);
+  }, [tool, keepingShadows]);
 
   const initCanvases = useCallback((w: number, h: number) => {
     setNaturalSize({ w, h });
@@ -726,7 +738,36 @@ export default function ManualPhotoEditor({
     });
   };
 
-  const handleApplyBackground = async () => {
+  const cancelKeepShadows = () => {
+    setKeepingShadows(false);
+    clearPaint();
+  };
+
+  useEffect(() => {
+    if (!keepingShadows) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setKeepingShadows(false);
+      clearPaint();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keepingShadows]);
+
+  const enterKeepShadowMode = (message: string) => {
+    setKeepingShadows(true);
+    setTool("background");
+    setShowOriginal(false);
+    setImageReady(false);
+    setPreviewKey((k) => k + 1);
+    clearPaint();
+    toast({
+      title: "Paint shadows to keep",
+      description: message,
+    });
+  };
+
+  const handleApplyBackground = async (mode: "auto" | "keep" | "none" = "auto") => {
     if (!token || !isValidBgHex) {
       toast({
         title: "Invalid input",
@@ -735,16 +776,50 @@ export default function ManualPhotoEditor({
       });
       return;
     }
+    if (mode === "keep" && !hasPaint) {
+      toast({
+        title: "Paint a region",
+        description: "Brush over the original contact shadows you want to keep.",
+        variant: "destructive",
+      });
+      return;
+    }
     beginApply("background");
     try {
+      let keepShadowMask: Blob | undefined;
+      if (mode === "keep") {
+        const maskBlob = await exportMaskBlob();
+        if (!maskBlob) throw new Error("Could not export the shadow-keep mask");
+        keepShadowMask = maskBlob;
+      }
       const res = await apiChangeBackgroundColour(
         token,
         workingS3Key,
         `#${cleanBgHex.toUpperCase()}`,
-        { saveToGallery: false, backgroundNoise }
+        {
+          saveToGallery: false,
+          backgroundNoise,
+          keepShadowMask,
+          confirmNoisyBackground: mode === "none",
+        }
       );
+      if (res.status === "needs_shadow_keep") {
+        enterKeepShadowMode(res.detail);
+        return;
+      }
+      if (!("s3_key" in res) || !res.s3_key) {
+        throw new Error(res.detail || "Could not change background");
+      }
       await applyWorkingResult(res);
-      toast({ title: "Applied", description: "Background updated. Continue editing or Save." });
+      toast({
+        title: "Applied",
+        description:
+          mode === "keep"
+            ? "Kept the painted contact shadows. Continue editing or Save."
+            : mode === "none"
+              ? "Background replaced without keeping shadows. Continue editing or Save."
+              : "Background updated. Continue editing or Save.",
+      });
     } catch (err: unknown) {
       toast({
         title: "Failed",
@@ -934,6 +1009,7 @@ export default function ManualPhotoEditor({
     segmentedAlphaKeysRef.current = new Set();
     pendingAlphaKeyRef.current = null;
     setGeneratingPhase("applying");
+    setKeepingShadows(false);
     clearPaint();
     toast({
       title: "Edits discarded",
@@ -1019,7 +1095,7 @@ export default function ManualPhotoEditor({
             disabled={!hasAppliedEdits}
             title="Discard applied edits and start again from the original"
           >
-            <Undo2 className="h-4 w-4" /> Reject all edits
+            <Undo2 className="h-4 w-4" /> Discard all edits
           </Button>
           <Button
             type="button"
@@ -1027,7 +1103,7 @@ export default function ManualPhotoEditor({
             size="sm"
             className="gap-2"
             onClick={() => setShowOriginal((v) => !v)}
-            disabled={workingUrl === originalUrl && !dirty && editCount === 0}
+            disabled={keepingShadows || (workingUrl === originalUrl && !dirty && editCount === 0)}
           >
             {showOriginal ? (
               <>
@@ -1086,7 +1162,7 @@ export default function ManualPhotoEditor({
                   alt={showOriginal ? "Original" : "Working edit"}
                   className="block max-h-[70vh] max-w-full"
                   onLoad={(e) => {
-                    if (isBrushTool(tool) && !showOriginal) {
+                    if (showBrushOverlay(tool, keepingShadows) && !showOriginal) {
                       const img = e.currentTarget;
                       initCanvases(img.naturalWidth, img.naturalHeight);
                     }
@@ -1152,7 +1228,7 @@ export default function ManualPhotoEditor({
                     <span className="font-mono text-xs">{hoverSample.hex}</span>
                   </div>
                 )}
-                {isBrushTool(tool) && !showOriginal && (
+                {showBrushOverlay(tool, keepingShadows) && !showOriginal && (
                   <>
                     <canvas ref={maskCanvasRef} className="hidden" />
                     <canvas
@@ -1173,6 +1249,12 @@ export default function ManualPhotoEditor({
                 )}
               </div>
             </div>
+            {keepingShadows && tool === "background" && !showOriginal && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Paint the original contact shadows to keep. A soft fade around
+                the paint blends them into your chosen colour. Press Esc to cancel.
+              </p>
+            )}
             {pickingSource && tool === "metal" && (
               <p className="mt-2 text-sm text-muted-foreground">
                 Click the metal on the photo to sample its colour. Press Esc to cancel.
@@ -1207,6 +1289,9 @@ export default function ManualPhotoEditor({
               value={tool}
               onValueChange={(v) => {
                 const next = v as ManualEditTool;
+                if (keepingShadows) {
+                  setKeepingShadows(false);
+                }
                 setTool(next);
                 clearPaint();
                 pickingActiveRef.current = false;
@@ -1321,13 +1406,100 @@ export default function ManualPhotoEditor({
                     disabled={showOriginal}
                   />
                 </div>
-                <Button
-                  className="w-full"
-                  onClick={handleApplyBackground}
-                  disabled={!token || !isValidBgHex || showOriginal}
-                >
-                  Apply background
-                </Button>
+                {keepingShadows ? (
+                  <div className="space-y-4 rounded-md border bg-muted/40 p-3">
+                    <p className="text-sm">
+                      This plate is too noisy to extract shadows automatically. Paint the
+                      original contact shadows you want to keep. A soft fade is added
+                      around the paint so the shadow blends into{" "}
+                      <span className="font-mono font-medium">
+                        #{cleanBgHex.toUpperCase()}
+                      </span>
+                      ; unpainted background becomes that colour.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={brushMode === "paint" ? "default" : "outline"}
+                        className="gap-2"
+                        onClick={() => setBrushMode("paint")}
+                        disabled={showOriginal}
+                      >
+                        <Brush className="h-4 w-4" /> Paint
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={brushMode === "erase" ? "default" : "outline"}
+                        className="gap-2"
+                        onClick={() => setBrushMode("erase")}
+                        disabled={showOriginal}
+                      >
+                        <Eraser className="h-4 w-4" /> Erase
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={clearPaint}
+                        disabled={!hasPaint || showOriginal}
+                      >
+                        <RotateCcw className="h-4 w-4" /> Clear
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label>Brush size</Label>
+                        <span className="text-sm text-muted-foreground">{brushSize}px</span>
+                      </div>
+                      <Slider
+                        value={[brushSize]}
+                        onValueChange={(v) => setBrushSize(v[0] ?? 28)}
+                        min={8}
+                        max={Math.max(
+                          80,
+                          naturalSize
+                            ? Math.round(Math.min(naturalSize.w, naturalSize.h) * 0.12)
+                            : 120
+                        )}
+                        step={1}
+                        disabled={showOriginal}
+                      />
+                    </div>
+                    <Button
+                      className="w-full"
+                      onClick={() => void handleApplyBackground("keep")}
+                      disabled={!token || !isValidBgHex || !hasPaint || showOriginal}
+                    >
+                      Apply with kept shadows
+                    </Button>
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={() => void handleApplyBackground("none")}
+                      disabled={!token || !isValidBgHex || showOriginal}
+                    >
+                      Replace without shadows
+                    </Button>
+                    <Button
+                      className="w-full"
+                      variant="ghost"
+                      onClick={cancelKeepShadows}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    className="w-full"
+                    onClick={() => void handleApplyBackground("auto")}
+                    disabled={!token || !isValidBgHex || showOriginal}
+                  >
+                    Apply background
+                  </Button>
+                )}
               </TabsContent>
 
               <TabsContent value="metal" className="space-y-4 pt-2">
