@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, ChevronLeft, ChevronRight, Download, Gem, IndianRupee, Mail, Plus, SquareUser, Wand2, X } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Download, Gem, Images, IndianRupee, Mail, Plus, SquareUser, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -252,7 +252,7 @@ export default function GenerationUsage() {
           title: "Model shoot",
           count: data.model_shoot,
           amount: data.billing.by_category.model_shoot,
-              description: "Regular and close-up views",
+          description: "Regular and close-up views",
           icon: SquareUser,
           barClass: "bg-violet-500",
           iconClass: "text-violet-600",
@@ -273,10 +273,30 @@ export default function GenerationUsage() {
           modelSummary: formatModelSummary(data.category_breakdown?.edited_image?.by_model),
           sizeSummary: formatSizeSummary(data.category_breakdown?.edited_image?.by_image_size),
         },
+        {
+          key: "modelPose",
+          title: "Model pose",
+          count: data.model_pose ?? 0,
+          amount: data.billing.by_category.model_pose ?? 0,
+          description: "Library pose images at ₹25 each",
+          icon: Images,
+          barClass: "bg-fuchsia-500",
+          iconClass: "text-fuchsia-600",
+          cardClass: "border-fuchsia-200/80",
+          modelSummary: "",
+          sizeSummary: "",
+        },
       ]
     : [];
 
   const total = data?.total ?? 0;
+  const poseBilling = rateRowFor(data?.billing?.by_rate, "model_pose", "flat");
+  const modelChartTotal = data
+    ? MODEL_LABELS.reduce((sum, model) => sum + (data.by_model[model.key] ?? 0), 0)
+    : 0;
+  const sizeChartTotal = data
+    ? SIZE_KEYS.reduce((sum, size) => sum + (data.by_image_size[size] ?? 0), 0)
+    : 0;
 
   const downloadInvoice = async () => {
     if (!token || !data?.month) return;
@@ -473,7 +493,8 @@ export default function GenerationUsage() {
       {isLoading && (
         <div className="space-y-4">
           <Skeleton className="h-40 w-full" />
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Skeleton className="h-32" />
             <Skeleton className="h-32" />
             <Skeleton className="h-32" />
             <Skeleton className="h-32" />
@@ -629,7 +650,7 @@ export default function GenerationUsage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {categories.map((category) => {
               const Icon = category.icon;
               const percent = share(category.count, total);
@@ -667,13 +688,14 @@ export default function GenerationUsage() {
               <CardHeader>
                 <CardTitle className="text-base">By model</CardTitle>
                 <CardDescription>
-                  If Nano Banana Pro returned an image even once, the generation is counted as Pro.
-                  Otherwise it is Nano Banana 2.
+                  Shoot and edit generations only. If Nano Banana Pro returned an image even once,
+                  the generation is counted as Pro. Otherwise it is Nano Banana 2. Model pose is
+                  billed separately.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <BreakdownBars
-                  total={total}
+                  total={modelChartTotal}
                   items={MODEL_LABELS.map((model) => ({
                     key: model.key,
                     label: model.label,
@@ -690,11 +712,14 @@ export default function GenerationUsage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">By image size</CardTitle>
-                <CardDescription>Requested output quality for each successful generation.</CardDescription>
+                <CardDescription>
+                  Requested output quality for shoot and edit generations. Model pose is a flat
+                  ₹25 and is not split by size.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <BreakdownBars
-                  total={total}
+                  total={sizeChartTotal}
                   items={SIZE_KEYS.map((size) => ({
                     key: size,
                     label: size,
@@ -713,15 +738,15 @@ export default function GenerationUsage() {
                 <div>
                   <CardTitle className="text-base">Live billing</CardTitle>
                   <CardDescription>
-                    Each successful generation is billed by the model that returned the image and the
-                    requested output quality.
+                    Shoot and edit generations are billed by the model that returned the image and
+                    the requested output quality.
                   </CardDescription>
                 </div>
                 <IndianRupee className="mt-0.5 h-4 w-4 text-muted-foreground" />
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-4 lg:grid-cols-3">
                 {BILLING_TIERS.map((tier) => {
                   const rows = SIZE_KEYS.map((size) => rateRowFor(data.billing.by_rate, tier.model, size));
                   const subtotal = rows.reduce((sum, row) => sum + row.amount_inr, 0);
@@ -760,6 +785,32 @@ export default function GenerationUsage() {
                     </div>
                   );
                 })}
+                <div className="rounded-lg border">
+                  <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Model pose</p>
+                      <p className="text-xs text-muted-foreground">Library pose images</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold tabular-nums">{formatInr(poseBilling.amount_inr)}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {poseBilling.count} {poseBilling.count === 1 ? "image" : "images"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5 text-sm">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <span className="h-2 w-2 rounded-full bg-fuchsia-500" />
+                        Flat
+                      </span>
+                      <span className="text-muted-foreground tabular-nums">
+                        {formatInr(poseBilling.unit_price_inr || 25)} × {poseBilling.count}
+                      </span>
+                      <span className="tabular-nums font-medium">{formatInr(poseBilling.amount_inr)}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
               {data.billing.unpriced_count > 0 ? (
                 <p className="text-xs text-muted-foreground">
@@ -790,14 +841,20 @@ export default function GenerationUsage() {
                 Manual photo editing is not counted.
               </p>
               <p>
+                Each successful model-pose image counts as 1 generation and is billed at ₹25. This
+                includes generating poses when a new model is created, generating a new pose across
+                the model library, and regenerating a specific model pose.
+              </p>
+              <p>
                 Model attribution: Nano Banana Pro if it returned an image even once for that
                 generation. If Pro returned 500/503 or no image, the generation is attributed to
-                Nano Banana 2.
+                Nano Banana 2. Model pose is not attributed this way — it is always billed at the
+                flat model-pose rate.
               </p>
               <p>
                 Billing is calculated live from the current rate chart: Standard (Nano Banana 2) is
                 ₹50 for 1K, ₹70 for 2K, and ₹100 for 4K. Premium (Nano Banana Pro) is ₹100 for 1K
-                and 2K, and ₹130 for 4K.
+                and 2K, and ₹130 for 4K. Model pose generation is ₹25 per image.
               </p>
               <p>
                 On the 1st of every month at 9:00 AM IST, a PDF invoice for the previous month is

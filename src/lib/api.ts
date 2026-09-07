@@ -2302,6 +2302,7 @@ export type GenerationBilling = {
     product_shoot: number;
     model_shoot: number;
     edited_image: number;
+    model_pose?: number;
   };
   by_rate: GenerationBillingRateRow[];
 };
@@ -2312,6 +2313,7 @@ export type GenerationUsage = {
   product_shoot: number;
   model_shoot: number;
   edited_image: number;
+  model_pose?: number;
   total: number;
   by_model: GenerationModelBreakdown;
   by_image_size: Record<string, number>;
@@ -2319,6 +2321,7 @@ export type GenerationUsage = {
     product_shoot: GenerationCategoryBreakdown;
     model_shoot: GenerationCategoryBreakdown;
     edited_image: GenerationCategoryBreakdown;
+    model_pose?: GenerationCategoryBreakdown;
   };
   billing: GenerationBilling;
   available_months: string[];
