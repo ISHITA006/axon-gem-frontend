@@ -6,6 +6,7 @@ import {
   Images,
   ListOrdered,
   Loader2,
+  PauseCircle,
   RotateCw,
   Wand2,
   XCircle,
@@ -234,11 +235,6 @@ export default function GenerationQueue({
             <ListOrdered className="h-4 w-4" />
             Generation Queue
           </CardTitle>
-          <CardDescription>
-            Submit as many generation requests as you need. Up to {maxConcurrent} run at a time;
-            the rest wait here. This list keeps queued and processing requests, plus the{" "}
-            {completedVisibleLimit} most recent completed ones.
-          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3 text-sm">
           <Badge variant="secondary">{processingCount} processing</Badge>
@@ -267,7 +263,11 @@ export default function GenerationQueue({
                   <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{job.title}</p>
-                    <Badge variant={statusVariant(job.status)}>{STATUS_LABEL[job.status]}</Badge>
+                    <Badge variant={statusVariant(job.status)}>
+                      {job.status === "processing" && job.status_message
+                        ? "Paused"
+                        : STATUS_LABEL[job.status]}
+                    </Badge>
                     {job.status === "queued" && job.queue_position ? (
                       <span className="text-xs text-muted-foreground">
                         Position {job.queue_position}
@@ -286,6 +286,9 @@ export default function GenerationQueue({
                   </p>
                   {job.status === "failed" && job.error_message ? (
                     <p className="text-sm text-destructive">{job.error_message}</p>
+                  ) : null}
+                  {job.status === "processing" && job.status_message ? (
+                    <p className="text-sm text-amber-800">{job.status_message}</p>
                   ) : null}
                   </div>
                 </div>
@@ -308,8 +311,17 @@ export default function GenerationQueue({
                   ) : null}
                   {job.status === "processing" ? (
                     <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Generating
+                      {job.status_message ? (
+                        <>
+                          <PauseCircle className="h-3.5 w-3.5 text-amber-700" />
+                          Paused
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Generating
+                        </>
+                      )}
                     </span>
                   ) : null}
                   {job.status === "queued" ? (

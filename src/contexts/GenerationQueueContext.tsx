@@ -20,6 +20,7 @@ import {
 import {
   ensureGenerationNotifyPermission,
   notifyGenerationError,
+  notifyGenerationPause,
   notifyGenerationSuccess,
 } from "@/lib/generationNotify";
 
@@ -112,6 +113,12 @@ export function GenerationQueueProvider({ children }: { children: ReactNode }) {
     const previous = new Map(jobsRef.current.map((job) => [job.uid, job]));
     for (const job of data.jobs) {
       const before = previous.get(job.uid);
+      const pauseMessage = job.status === "processing" ? (job.status_message || "").trim() : "";
+      const previousPause = before?.status === "processing" ? (before.status_message || "").trim() : "";
+      if (pauseMessage && pauseMessage !== previousPause) {
+        toast({ title: `${job.title} paused`, description: pauseMessage });
+        notifyGenerationPause(`${job.title} paused`, pauseMessage);
+      }
       if (!before || before.status === job.status) continue;
       if (job.status === "completed") {
         const description = "Open Generation Queue to view the result.";

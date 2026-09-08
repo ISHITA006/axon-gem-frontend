@@ -24,6 +24,10 @@ export function notifyGenerationError(title: string, body: string): void {
   showOsNotification(title, body, ERROR_TAG);
 }
 
+export function notifyGenerationPause(title: string, body: string): void {
+  showOsNotification(title, body, "axongem-generation-pause");
+}
+
 function showOsNotification(title: string, body: string, tag: string): void {
   if (!canUseNotifications()) return;
   if (Notification.permission !== "granted") return;

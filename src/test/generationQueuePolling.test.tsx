@@ -21,6 +21,7 @@ vi.mock("@/lib/generationNotify", () => ({
   ensureGenerationNotifyPermission: vi.fn(async () => undefined),
   notifyGenerationSuccess: vi.fn(),
   notifyGenerationError: vi.fn(),
+  notifyGenerationPause: vi.fn(),
 }));
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
@@ -116,7 +117,7 @@ describe("generation queue polling", () => {
     expect(dispatchMock).not.toHaveBeenCalled();
   });
 
-  it("polls every 30s while jobs are queued or processing", async () => {
+  it("polls every 10s while jobs are queued or processing", async () => {
     listMock.mockResolvedValue(
       makePayload({
         jobs: [makeJob({ status: "processing" })],
@@ -178,5 +179,45 @@ describe("generation queue polling", () => {
     });
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(pollCallbacks().length).toBeGreaterThan(0));
+  });
+
+  it("toasts when a processing job reports that the Premium model is paused", async () => {
+    const processing = makeJob({ status: "processing" });
+    listMock
+      .mockResolvedValueOnce(
+        makePayload({
+          jobs: [processing],
+          processing_count: 1,
+        })
+      )
+      .mockResolvedValue(
+        makePayload({
+          jobs: [
+            makeJob({
+              status: "processing",
+              status_message:
+                "Generation is paused as the Premium model was unavailable. Trying again in some time.",
+            }),
+          ],
+          processing_count: 1,
+        })
+      );
+
+    render(<Probe />, { wrapper });
+    await waitFor(() => expect(pollCallbacks().length).toBeGreaterThan(0));
+    const tick = pollCallbacks().at(-1)!;
+
+    await act(async () => {
+      tick();
+    });
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Product shoot paused",
+          description:
+            "Generation is paused as the Premium model was unavailable. Trying again in some time.",
+        })
+      )
+    );
   });
 });

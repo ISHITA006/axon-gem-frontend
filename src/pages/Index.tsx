@@ -3,7 +3,10 @@ import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar, TabValue } from "@/components/AppSidebar";
 import { Card, CardContent } from "@/components/ui/card";
-import { SlidersHorizontal } from "lucide-react";
+import { PauseCircle, SlidersHorizontal } from "lucide-react";
+import { useGenerationQueueOptional } from "@/contexts/GenerationQueueContext";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import ModelTryOn from "@/components/ModelTryOn";
 import MyGallery from "@/components/MyGallery";
 import ManageModels from "@/components/ManageModels";
@@ -21,6 +24,32 @@ import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
 import GenerationUsage from "@/components/GenerationUsage";
 import GenerationQueue from "@/components/GenerationQueue";
+
+function PremiumModelPauseBanner({ onViewQueue }: { onViewQueue: () => void }) {
+  const queue = useGenerationQueueOptional();
+  const pausedJobs = (queue?.jobs ?? []).filter(
+    (job) => job.status === "processing" && Boolean(job.status_message?.trim())
+  );
+  if (pausedJobs.length === 0) return null;
+  return (
+    <Alert className="mb-6 border-amber-300 bg-amber-50 text-amber-950 [&>svg]:text-amber-700">
+      <PauseCircle className="h-4 w-4" />
+      <AlertTitle>Generation paused</AlertTitle>
+      <AlertDescription className="space-y-3">
+        {pausedJobs.map((job) => (
+          <p key={job.uid}>
+            <span className="font-medium">{job.title}</span>
+            {": "}
+            {job.status_message}
+          </p>
+        ))}
+        <Button type="button" size="sm" variant="outline" onClick={onViewQueue}>
+          View queue
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<TabValue>("uploadStudioShoot");
@@ -68,6 +97,9 @@ export default function Index() {
               activeTab === "modelPoses" ? "w-full max-w-[min(100%,90rem)]" : "max-w-6xl"
             )}
           >
+            {activeTab !== "generationQueue" ? (
+              <PremiumModelPauseBanner onViewQueue={() => setActiveTab("generationQueue")} />
+            ) : null}
             {activeTab === "tryon" && (
               <ModelTryOn
                 s3Key={tryOnJewellery?.s3Key}

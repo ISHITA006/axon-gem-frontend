@@ -58,6 +58,7 @@ export type GenerationJob = {
   payload?: Record<string, unknown> | null;
   result?: Record<string, unknown> | null;
   error_message?: string | null;
+  status_message?: string | null;
   draft_uid?: string | null;
   generation_uid?: string | null;
   queue_position?: number | null;
