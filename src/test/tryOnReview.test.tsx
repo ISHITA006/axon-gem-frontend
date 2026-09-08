@@ -4,7 +4,6 @@ import TryOnResults from "@/components/TryOnResults";
 import type { ModelShootDraft, ModelShootGeneration } from "@/lib/api";
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/components/AddToCataloguePanel", () => ({ default: () => null }));
 
 function makeGeneration(overrides: Partial<ModelShootGeneration> = {}): ModelShootGeneration {
   return {

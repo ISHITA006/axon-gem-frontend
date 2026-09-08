@@ -206,58 +206,6 @@ export async function apiLogin(username: string, password: string) {
   return res.json() as Promise<{ access_token: string; token_type: string; expires_in_minutes: number }>;
 }
 
-export type CatalogViewerRecord = {
-  uid: string;
-  username: string;
-  password: string;
-  active: boolean;
-};
-
-export async function apiCreateCatalogViewer(token: string, username: string, password: string) {
-  const params = new URLSearchParams({
-    username,
-    password,
-  });
-  const res = await fetch(`${API_BASE_URL}/catalog-viewer-manager?${params.toString()}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  await assertOk(res, "Failed to create catalog viewer user");
-  return res.json() as Promise<CatalogViewerRecord>;
-}
-
-export async function apiListCatalogViewers(token: string) {
-  const res = await fetch(`${API_BASE_URL}/catalog-viewer-manager`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  await assertOk(res, "Failed to fetch catalog viewer users");
-  return res.json() as Promise<CatalogViewerRecord[]>;
-}
-
-export async function apiRevokeCatalogViewer(token: string, uid: string) {
-  const res = await fetch(
-    `${API_BASE_URL}/catalog-viewer-manager/${encodeURIComponent(uid)}/revoke`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  );
-  await assertOk(res, "Failed to revoke access");
-  return res.json() as Promise<{ uid: string; active: boolean }>;
-}
-
-export async function apiActivateCatalogViewer(token: string, uid: string) {
-  const res = await fetch(
-    `${API_BASE_URL}/catalog-viewer-manager/${encodeURIComponent(uid)}/activate`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  );
-  await assertOk(res, "Failed to activate access");
-  return res.json() as Promise<{ uid: string; active: boolean }>;
-}
-
 export async function apiGetModelImages(token: string) {
   const res = await fetch(`${API_BASE_URL}/get-all-model-images-s3-keys`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -698,8 +646,6 @@ export type TryOnAnalysis = {
   item_code?: string;
   jewellery_type?: unknown;
   category?: unknown;
-  /** Optional field if analysis explicitly provides catalogue category. */
-  catalogue_category?: unknown;
   gender?: unknown;
   age?: unknown;
   metal?: unknown;
@@ -998,107 +944,6 @@ export async function apiGetProductShootDraft(token: string, draftUid: string) {
   return res.json() as Promise<ProductShootDraft>;
 }
 
-export async function apiCreateCatalogueItem(
-  token: string,
-  payload: {
-    name: string;
-    jewelleryType: string;
-    category: string;
-    itemCode: string;
-    gender: string;
-    age: string;
-    metal: string;
-    settingType: string;
-    design: string;
-    imageS3Keys: string[];
-    description?: string;
-    metalPurity?: string;
-    metalWeightGrams?: string;
-    stoneType?: string;
-    stoneCut?: string;
-    stoneCount?: string;
-    stoneCarat?: string;
-  }
-) {
-  const formData = new FormData();
-  formData.append("name", payload.name);
-  formData.append("jewellery_type", payload.jewelleryType);
-  formData.append("category", payload.category);
-  formData.append("item_code", payload.itemCode);
-  formData.append("gender", payload.gender);
-  formData.append("age", payload.age);
-  formData.append("metal", payload.metal);
-  formData.append("setting_type", payload.settingType);
-  formData.append("design", payload.design);
-  payload.imageS3Keys.forEach((key) => {
-    formData.append("image_s3_keys", key);
-  });
-  if (payload.description?.trim()) {
-    formData.append("description", payload.description.trim());
-  }
-  const appendOptional = (field: string, value?: string) => {
-    if (value != null && value.trim() !== "") formData.append(field, value.trim());
-  };
-  appendOptional("metal_purity", payload.metalPurity);
-  appendOptional("metal_weight_grams", payload.metalWeightGrams);
-  appendOptional("stone_type", payload.stoneType);
-  appendOptional("stone_cut", payload.stoneCut);
-  appendOptional("stone_count", payload.stoneCount);
-  appendOptional("stone_carat", payload.stoneCarat);
-
-  const res = await fetch(`${API_BASE_URL}/catalogue`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  await assertOk(res, "Failed to create catalogue item");
-
-  return res.json() as Promise<{ uid: string; name: string; image_s3_key: string }>;
-}
-
-export async function apiEditCatalogueImage(
-  token: string,
-  payload: {
-    originalImageS3Key: string;
-    file: File;
-  }
-) {
-  const formData = new FormData();
-  formData.append("original_image_s3_key", payload.originalImageS3Key);
-  formData.append("file", await asUploadableImage(payload.file));
-
-  const res = await fetch(`${API_BASE_URL}/edit-image`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  await assertOk(res, "Failed to edit catalogue image");
-
-  const data = (await res.json()) as {
-    edited_image_s3_key?: string;
-    image_s3_key?: string;
-    preview_url?: string;
-    image_url?: string;
-  };
-
-  return {
-    editedImageS3Key: data.edited_image_s3_key ?? data.image_s3_key,
-    previewUrl: data.preview_url ?? data.image_url,
-  };
-}
-
-export type EditImageWithInstructionsResponse = {
-  editedImageS3Key?: string;
-  previewUrl?: string;
-  /** Set when the API returned raw image bytes; revoke with URL.revokeObjectURL when discarding. */
-  objectUrl?: string;
-};
-
-/**
- * Instruction-based image edit (multipart: edit_instructions, source_image_file, optional reference_image_file).
- */
 export async function apiEditImageWithInstructions(
   token: string,
   payload: {
@@ -1106,6 +951,7 @@ export async function apiEditImageWithInstructions(
     sourceImageFile: File;
     referenceImageFile?: File | null;
     sourceGalleryS3Key?: string | null;
+    outputQuality?: TryOnOutputQuality;
   }
 ): Promise<GenerationJob> {
   const formData = new FormData();
@@ -1117,6 +963,7 @@ export async function apiEditImageWithInstructions(
   if (payload.sourceGalleryS3Key) {
     formData.append("source_gallery_s3_key", payload.sourceGalleryS3Key);
   }
+  formData.append("output_quality", payload.outputQuality ?? "1K");
 
   const res = await fetch(`${API_BASE_URL}/edit-image-tool`, {
     method: "POST",
@@ -1126,160 +973,6 @@ export async function apiEditImageWithInstructions(
 
   await assertOk(res, "Failed to queue image edit");
   return parseGenerationJob(await res.json(), "Failed to queue image edit");
-}
-
-export type CatalogueSortBy = "updated_at" | "created_at" | "name" | "item_code";
-export type CatalogueSortDir = "asc" | "desc";
-
-export type CatalogueItem = {
-  uid?: string;
-  name?: string | null;
-  description?: string | null;
-  item_code?: string | null;
-  jewellery_type?: string | null;
-  gender?: string | null;
-  age?: string | null;
-  metal?: string | null;
-  metal_purity?: string | null;
-  metal_weight_grams?: string | null;
-  stone_type?: string | null;
-  stone_cut?: string | null;
-  stone_count?: string | null;
-  stone_carat?: string | null;
-  setting_type?: string | null;
-  design?: string | null;
-  category?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  images?: Array<{
-    uid?: string;
-    item_uid?: string | null;
-    s3_key?: string | null;
-    image_s3_key?: string | null;
-    url?: string | null;
-    preview_url?: string | null;
-  }>;
-};
-
-export type CatalogueListResponse = {
-  data: CatalogueItem[];
-  total: number;
-  page: number;
-  page_size: number;
-  page_count: number;
-};
-
-export async function apiGetCatalogueItems(
-  token: string,
-  params: {
-    page: number;
-    q?: string | null;
-    jewellery_type?: string | null;
-    gender?: string | null;
-    age?: string | null;
-    metal?: string | null;
-    setting_type?: string | null;
-    design?: string | null;
-    category?: string | null;
-    metal_purity?: string | null;
-    stone_type?: string | null;
-    stone_cut?: string | null;
-    sort_by?: CatalogueSortBy | null;
-    sort_dir?: CatalogueSortDir | null;
-  }
-) {
-  const sp = new URLSearchParams();
-  sp.set("page", String(params.page));
-
-  const maybeSet = (k: string, v: string | null | undefined) => {
-    if (v == null) return;
-    const trimmed = v.trim();
-    if (trimmed === "") return;
-    sp.set(k, trimmed);
-  };
-
-  maybeSet("q", params.q);
-  maybeSet("jewellery_type", params.jewellery_type);
-  maybeSet("gender", params.gender);
-  maybeSet("age", params.age);
-  maybeSet("metal", params.metal);
-  maybeSet("setting_type", params.setting_type);
-  maybeSet("design", params.design);
-  maybeSet("category", params.category);
-  maybeSet("metal_purity", params.metal_purity);
-  maybeSet("stone_type", params.stone_type);
-  maybeSet("stone_cut", params.stone_cut);
-  maybeSet("sort_by", params.sort_by ?? undefined);
-  maybeSet("sort_dir", params.sort_dir ?? undefined);
-
-  const res = await fetch(`${API_BASE_URL}/catalogue/items?${sp.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  await assertOk(res, "Failed to fetch catalogue items");
-  return res.json() as Promise<CatalogueListResponse>;
-}
-
-export async function apiUpdateCatalogueItem(
-  token: string,
-  uid: string,
-  payload: {
-    item_code: string;
-    name: string;
-    jewellery_type: string;
-    category: string;
-    gender: string;
-    age: string;
-    metal: string;
-    setting_type: string;
-    design: string;
-    image_s3_keys: string[];
-    description?: string | null;
-    metal_purity?: string | null;
-    metal_weight_grams?: string | null;
-    stone_type?: string | null;
-    stone_cut?: string | null;
-    stone_count?: string | null;
-    stone_carat?: string | null;
-  }
-) {
-  const formData = new FormData();
-  formData.append("item_code", payload.item_code);
-  formData.append("name", payload.name);
-  formData.append("jewellery_type", payload.jewellery_type);
-  formData.append("category", payload.category);
-  formData.append("gender", payload.gender);
-  formData.append("age", payload.age);
-  formData.append("metal", payload.metal);
-  formData.append("setting_type", payload.setting_type);
-  formData.append("design", payload.design);
-  payload.image_s3_keys.forEach((k) => formData.append("image_s3_keys", k));
-
-  if (payload.description != null) formData.append("description", payload.description);
-  if (payload.metal_purity != null) formData.append("metal_purity", payload.metal_purity);
-  if (payload.metal_weight_grams != null) formData.append("metal_weight_grams", payload.metal_weight_grams);
-  if (payload.stone_type != null) formData.append("stone_type", payload.stone_type);
-  if (payload.stone_cut != null) formData.append("stone_cut", payload.stone_cut);
-  if (payload.stone_count != null) formData.append("stone_count", payload.stone_count);
-  if (payload.stone_carat != null) formData.append("stone_carat", payload.stone_carat);
-
-  const res = await fetch(`${API_BASE_URL}/catalogue/${encodeURIComponent(uid)}`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  await assertOk(res, "Failed to update catalogue item");
-
-  return res.json() as Promise<CatalogueItem>;
-}
-
-export async function apiDeleteCatalogueItem(token: string, uid: string) {
-  const res = await fetch(`${API_BASE_URL}/catalogue/${encodeURIComponent(uid)}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  await assertOk(res, "Failed to delete catalogue item");
 }
 
 export const TRY_ON_ASPECT_RATIOS = [
@@ -1492,7 +1185,7 @@ export async function apiGetTryOnImages(token: string) {
   return res.json() as Promise<{ Key: string }[]>;
 }
 
-export type GalleryCategory = "model-shoot" | "product-shoot" | "edited-image" | "deleted-catalogue";
+export type GalleryCategory = "model-shoot" | "product-shoot" | "edited-image";
 
 export type GalleryItem = {
   uid: string;
@@ -1582,8 +1275,6 @@ export async function apiGetGalleryItems(
     path = "/gallery/product-shoot";
   } else if (params.category === "edited-image") {
     sp.set("category", "edited-image");
-  } else if (params.category === "deleted-catalogue") {
-    path = "/gallery/deleted-catalogue";
   }
 
   const res = await fetch(`${API_BASE_URL}${path}?${sp.toString()}`, {
@@ -1867,16 +1558,6 @@ export async function apiCreateStudioShoot(
   }
 
   return parseGenerationJob(await res.json(), "Failed to queue studio shoot");
-}
-
-export async function apiGetNextStudioShootCode(token: string) {
-  const res = await fetch(`${API_BASE_URL}/catalogue/next-studio-shoot-code`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  await assertOk(res, "Failed to fetch next studio shoot code");
-
-  return res.json() as Promise<{ code: string; number: number }>;
 }
 
 export type CreateModelPayload = {

@@ -14,10 +14,8 @@ import ManageProductAngles from "@/components/ManageProductAngles";
 import ManageProductSideAngles from "@/components/ManageProductSideAngles";
 import ManageModelPoses from "@/components/ManageModelPoses";
 import ManageBackgrounds from "@/components/ManageBackgrounds";
-import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 import ManualPhotoEditor, { ManualEditTool } from "@/components/ManualPhotoEditor";
 import UploadStudioShoot from "@/components/UploadStudioShoot";
-import ManageCatalogue from "@/components/ManageCatalogue";
 import EditImage from "@/components/EditImage";
 import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
@@ -119,12 +117,6 @@ export default function Index() {
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
               />
             )}
-            {activeTab === "catalogue" && (
-              <ManageCatalogue
-                onEditImage={handleEditImage}
-                onManualPhotoEdit={handleManualPhotoEdit}
-              />
-            )}
             {activeTab === "uploadStudioShoot" && (
               <UploadStudioShoot
                 onEditImage={handleEditImage}
@@ -154,7 +146,6 @@ export default function Index() {
               <ManageModelPoses onViewQueue={() => setActiveTab("generationQueue")} />
             )}
             {activeTab === "backgrounds" && <ManageBackgrounds />}
-            {activeTab === "catalogViewerManagement" && <ManageCatalogViewers />}
           </main>
         </div>
       </div>

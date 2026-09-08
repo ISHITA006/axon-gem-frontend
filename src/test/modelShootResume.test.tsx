@@ -12,7 +12,6 @@ const { getDraftMock, getPresignedUrlMock, regenerateMock } = vi.hoisted(() => (
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/components/AddToCataloguePanel", () => ({ default: () => null }));
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {

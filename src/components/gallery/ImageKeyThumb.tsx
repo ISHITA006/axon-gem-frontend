@@ -1,23 +1,16 @@
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getPresignedUrl } from "@/lib/api";
 
 export function ImageKeyThumb({
   token,
   s3Key,
-  onRemove,
-  disabled,
   clickable,
-  removeLoading,
 }: {
   token: string | null;
   s3Key: string;
-  onRemove?: () => void;
-  disabled?: boolean;
   clickable?: boolean;
-  removeLoading?: boolean;
 }) {
   const urlQuery = useQuery({
     queryKey: ["presigned-url", token, s3Key],
@@ -51,24 +44,6 @@ export function ImageKeyThumb({
           )}
         />
       )}
-
-      {onRemove ? (
-        <Button
-          type="button"
-          size="icon"
-          variant="secondary"
-          className="absolute right-1 top-1 h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          disabled={disabled}
-          title="Remove image"
-        >
-          {removeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-        </Button>
-      ) : null}
     </div>
   );
 }
-

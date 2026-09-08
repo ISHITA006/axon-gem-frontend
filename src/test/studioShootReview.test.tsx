@@ -4,14 +4,6 @@ import StudioShootResults from "@/components/StudioShootResults";
 import type { ProductShootDraft, ProductShootGeneration } from "@/lib/api";
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/components/AddToCataloguePanel", () => ({ default: () => null }));
-vi.mock("@/lib/api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return {
-    ...actual,
-    apiGetNextStudioShootCode: vi.fn().mockResolvedValue({ code: "SS-1", number: 1 }),
-  };
-});
 
 function makeGeneration(overrides: Partial<ProductShootGeneration> = {}): ProductShootGeneration {
   return {

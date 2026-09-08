@@ -2,10 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Download, ImageIcon, Loader2, Pencil, SlidersHorizontal, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
-import { apiEditImageWithInstructions, downloadImage } from "@/lib/api";
+import {
+  apiEditImageWithInstructions,
+  downloadImage,
+  TRY_ON_OUTPUT_QUALITIES,
+  type TryOnOutputQuality,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -56,6 +62,7 @@ export default function EditImage({
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [instructions, setInstructions] = useState("");
+  const [outputQuality, setOutputQuality] = useState<TryOnOutputQuality>("1K");
   const [submitting, setSubmitting] = useState(false);
   const [sourcePreview, setSourcePreview] = useState<string | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
@@ -205,6 +212,7 @@ export default function EditImage({
         sourceImageFile: sourceFile,
         referenceImageFile: referenceFile,
         sourceGalleryS3Key: userChoseLocalSourceRef.current ? null : sourceImageS3Key,
+        outputQuality,
       });
       trackJob(job);
       userChoseLocalSourceRef.current = true;
@@ -564,6 +572,27 @@ export default function EditImage({
             rows={4}
             className="resize-y min-h-[100px]"
           />
+        </div>
+
+        <div className="space-y-1.5 max-w-xs">
+          <Label htmlFor="editOutputQuality" className="text-sm font-medium">
+            Output quality
+          </Label>
+          <Select
+            value={outputQuality}
+            onValueChange={(v) => setOutputQuality(v as TryOnOutputQuality)}
+          >
+            <SelectTrigger id="editOutputQuality">
+              <SelectValue placeholder="Quality" />
+            </SelectTrigger>
+            <SelectContent>
+              {TRY_ON_OUTPUT_QUALITIES.map((quality) => (
+                <SelectItem key={quality} value={quality}>
+                  {quality}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Button type="button" onClick={handleEdit} disabled={submitting || !token} className="w-full sm:w-auto">

@@ -43,7 +43,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatTableDate } from "./catalogue/utils";
+import { formatTableDate } from "@/lib/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
 import ModelShootReviewSession from "@/components/ModelShootReviewSession";
 import ProductShootReviewSession from "@/components/ProductShootReviewSession";
@@ -51,18 +51,16 @@ import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
 const PRODUCTS_PER_PAGE = 24;
-type GalleryView = "products" | "recent" | "deleted-catalogue";
+type GalleryView = "products" | "recent";
 const GALLERY_VIEWS: { id: GalleryView; label: string }[] = [
   { id: "products", label: "All products" },
   { id: "recent", label: "All generations" },
-  { id: "deleted-catalogue", label: "Deleted Catalogue Items" },
 ];
 const ASSIGNABLE_CATEGORIES = new Set(["model-shoot", "product-shoot", "edited-image"]);
 const GALLERY_CATEGORY_LABELS: Record<GalleryCategory, string> = {
   "model-shoot": "Model Shoot",
   "product-shoot": "Product Shoot",
   "edited-image": "Edited Images",
-  "deleted-catalogue": "Deleted Catalogue Items",
 };
 
 interface MyGalleryProps {
@@ -232,8 +230,6 @@ export default function MyGallery({
   } | null>(null);
 
   const page = pagination.pageIndex + 1;
-  const listCategory: GalleryCategory | "recent" =
-    view === "deleted-catalogue" ? "deleted-catalogue" : "recent";
 
   const productsQuery = useQuery({
     queryKey: ["gallery-products", token, page, pagination.pageSize],
@@ -256,12 +252,12 @@ export default function MyGallery({
   });
 
   const query = useQuery({
-    queryKey: ["gallery-items", token, listCategory, page, pagination.pageSize],
+    queryKey: ["gallery-items", token, page, pagination.pageSize],
     enabled: Boolean(token) && view !== "products",
     queryFn: async () => {
       if (!token) throw new Error("Not authenticated");
       return apiGetGalleryItems(token, {
-        category: listCategory,
+        category: "recent",
         page,
         limit: pagination.pageSize,
       });

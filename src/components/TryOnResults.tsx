@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 import { JewelleryReferencePicker, type JewelleryReferencePickerValue } from "@/components/JewelleryReferencePicker";
 import {
   downloadImage,
@@ -355,11 +354,6 @@ export default function TryOnResults({
         <Button variant="ghost" onClick={onBack} className="gap-2">
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Button>
-        <AddToCataloguePanel
-          token={token}
-          analysis={results.analysis}
-          images={imageItems.map((i) => ({ url: i.url, s3Key: i.s3Key }))}
-        />
       </div>
 
       <Card>

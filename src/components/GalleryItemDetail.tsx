@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Tag, Trash2 } from "lucide-react";
 
-import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,19 +24,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ViewField } from "@/components/catalogue/ViewField";
-import { formatTableDate } from "@/components/catalogue/utils";
-import { FullscreenCarouselDialog } from "@/components/catalogue/images/FullscreenCarouselDialog";
-import { ImageKeyThumb } from "@/components/catalogue/images/ImageKeyThumb";
+import { ViewField } from "@/components/gallery/ViewField";
+import { FullscreenCarouselDialog } from "@/components/gallery/FullscreenCarouselDialog";
+import { ImageKeyThumb } from "@/components/gallery/ImageKeyThumb";
 import { useToast } from "@/hooks/use-toast";
 import {
   apiAssignGalleryItemProduct,
   apiDeleteGalleryItem,
   galleryImageCaptions,
-  getPresignedUrl,
   type GalleryItem,
-  type TryOnAnalysis,
 } from "@/lib/api";
+import { formatTableDate } from "@/lib/utils";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 type Props = {
@@ -72,23 +69,6 @@ export function GalleryItemDetail({
   const [assigning, setAssigning] = useState(false);
   const imageKeys = item.image_s3_keys ?? [];
   const canAssign = ["model-shoot", "product-shoot", "edited-image"].includes(String(item.category));
-
-  const presignedQueries = useQueries({
-    queries: imageKeys.map((s3Key) => ({
-      queryKey: ["presigned-url", token, s3Key],
-      queryFn: () => getPresignedUrl(token!, s3Key),
-      enabled: Boolean(token && s3Key),
-      staleTime: 3 * 60 * 1000,
-    })),
-  });
-
-  const catalogueImages: { url: string; s3Key: string }[] = [];
-  imageKeys.forEach((s3Key, i) => {
-    const url = presignedQueries[i]?.data;
-    if (url) catalogueImages.push({ s3Key, url });
-  });
-
-  const analysis = item.analysis as TryOnAnalysis | null | undefined;
   const captions = galleryImageCaptions(item.analysis);
   const analysisForDisplay = item.analysis
     ? Object.fromEntries(
@@ -233,7 +213,6 @@ export function GalleryItemDetail({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <AddToCataloguePanel token={token} analysis={analysis} images={catalogueImages} />
           {canAssign ? (
             <Button
               type="button"

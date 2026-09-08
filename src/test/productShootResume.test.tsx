@@ -12,14 +12,12 @@ const { getDraftMock, getPresignedUrlMock, regenerateMock } = vi.hoisted(() => (
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/components/AddToCataloguePanel", () => ({ default: () => null }));
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     apiGetProductShootDraft: (...args: unknown[]) => getDraftMock(...args),
     apiRegenerateProductShoot: (...args: unknown[]) => regenerateMock(...args),
-    apiGetNextStudioShootCode: vi.fn().mockResolvedValue({ code: "SS-1", number: 1 }),
     getPresignedUrl: (...args: unknown[]) => getPresignedUrlMock(...args),
   };
 });

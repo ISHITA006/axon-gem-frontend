@@ -1,5 +1,4 @@
-import { cn } from "@/lib/utils";
-import { valueOrDash } from "./utils";
+import { cn, valueOrDash } from "@/lib/utils";
 
 export function ViewField({
   label,
@@ -17,4 +16,3 @@ export function ViewField({
     </div>
   );
 }
-

@@ -5,8 +5,6 @@ import {
   Users,
   LogOut,
   ImagePlus,
-  LibraryBig,
-  UserCog,
   Wand2,
   PersonStanding,
   UserPen,
@@ -45,7 +43,6 @@ export type TabValue =
   | "tryon"
   | "manualPhotoEdit"
   | "gallery"
-  | "catalogue"
   | "uploadStudioShoot"
   | "models"
   | "poses"
@@ -55,7 +52,6 @@ export type TabValue =
   | "productSideAngles"
   | "modelPoses"
   | "backgrounds"
-  | "catalogViewerManagement"
   | "editImage"
   | "brandKit"
   | "productBrandKit"
@@ -70,7 +66,6 @@ const mainNavItems: NavItem[] = [
   { title: "Edit Image", value: "editImage", icon: Wand2 },
   { title: "Generation Queue", value: "generationQueue", icon: ListOrdered },
   { title: "My Gallery", value: "gallery", icon: Images },
-  { title: "Catalogue", value: "catalogue", icon: LibraryBig },
 ];
 
 const settingsNavItems: NavItem[] = [
@@ -82,7 +77,6 @@ const settingsNavItems: NavItem[] = [
   { title: "Manage Model Poses", value: "modelPoses", icon: UserPen },
   { title: "Manage Close-Up Poses", value: "closeUpPoses", icon: LucideCamera },
   { title: "Manage Backgrounds", value: "backgrounds", icon: ImagePlus },
-  { title: "Catalog Viewer Management", value: "catalogViewerManagement", icon: UserCog },
   { title: "Product Shoot Brand Kit", value: "productBrandKit", icon: BriefcaseBusiness },
   { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
 ];

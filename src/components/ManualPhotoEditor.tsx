@@ -35,7 +35,6 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import AddToCataloguePanel from "./AddToCataloguePanel";
 
 export type ManualEditTool = "background" | "metal" | "blur" | "shadow";
 
@@ -217,7 +216,6 @@ export default function ManualPhotoEditor({
   const [tool, setTool] = useState<ManualEditTool>(initialTool);
   const [workingS3Key, setWorkingS3Key] = useState(s3Key);
   const [workingUrl, setWorkingUrl] = useState(imageUrl);
-  const [savedS3Key, setSavedS3Key] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -286,7 +284,6 @@ export default function ManualPhotoEditor({
     setWorkingUrl(imageUrl);
     setDirty(false);
     setSaved(false);
-    setSavedS3Key(null);
     setEditCount(0);
     setShowOriginal(false);
     setTool(initialTool);
@@ -935,8 +932,7 @@ export default function ManualPhotoEditor({
     if (!token || !dirty) return;
     setSaving(true);
     try {
-      const res = await apiSaveEditedImage(token, workingS3Key);
-      setSavedS3Key(res.s3_key);
+      await apiSaveEditedImage(token, workingS3Key);
       setDirty(false);
       setSaved(true);
       toast({ title: "Saved", description: "Added to Edited Images in My Gallery." });
@@ -995,7 +991,6 @@ export default function ManualPhotoEditor({
     setWorkingUrl(imageUrl);
     setDirty(false);
     setSaved(false);
-    setSavedS3Key(null);
     setEditCount(0);
     setShowOriginal(false);
     setPreviewKey((k) => k + 1);
@@ -1135,13 +1130,6 @@ export default function ManualPhotoEditor({
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save to gallery
           </Button>
-          {saved && (
-            <AddToCataloguePanel
-              token={token}
-              analysis={null}
-              images={[{ url: workingUrl, s3Key: savedS3Key || workingS3Key }]}
-            />
-          )}
         </div>
       </div>
 

@@ -14,11 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { JewelleryReferencePicker, type JewelleryReferencePickerValue } from "@/components/JewelleryReferencePicker";
 import {
-  apiGetNextStudioShootCode,
   downloadImage,
   type JewelleryReferenceChange,
   type ProductShootDraft,
@@ -244,7 +242,6 @@ export default function StudioShootResults({
   onManualPhotoEdit,
 }: StudioShootResultsProps) {
   const { toast } = useToast();
-  const [nextItemCode, setNextItemCode] = useState("");
   const [frontPrompt, setFrontPrompt] = useState("");
   const [sidePrompt, setSidePrompt] = useState("");
 
@@ -259,21 +256,6 @@ export default function StudioShootResults({
     setFrontPrompt(frontEdit.suggested);
     setSidePrompt(sideEdit.suggested);
   }, [activeUid, frontEdit.suggested, sideEdit.suggested]);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    void apiGetNextStudioShootCode(token)
-      .then((data) => {
-        if (!cancelled) setNextItemCode(data.code || "");
-      })
-      .catch(() => {
-        if (!cancelled) setNextItemCode("");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   const handleDownload = async (s3Key: string, filename: string) => {
     if (!token) return;
@@ -357,15 +339,6 @@ export default function StudioShootResults({
         <Button variant="ghost" onClick={onBack} className="gap-2">
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Button>
-        <AddToCataloguePanel
-          token={token}
-          analysis={null}
-          images={imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }))}
-          formOverrides={{
-            category: "Studio Shoot",
-            itemCode: nextItemCode,
-          }}
-        />
       </div>
 
       {results.status === "partial" && (results.frontError || results.sideError) && (
