@@ -25,13 +25,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ViewField } from "@/components/gallery/ViewField";
-import { FullscreenCarouselDialog } from "@/components/gallery/FullscreenCarouselDialog";
-import { ImageKeyThumb } from "@/components/gallery/ImageKeyThumb";
+import { ImageCarouselStage } from "@/components/gallery/FullscreenCarouselDialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   apiAssignGalleryItemProduct,
   apiDeleteGalleryItem,
   galleryImageCaptions,
+  galleryImageViews,
   type GalleryItem,
 } from "@/lib/api";
 import { formatTableDate } from "@/lib/utils";
@@ -48,6 +48,71 @@ type Props = {
   onItemUpdated?: (item: GalleryItem) => void;
 };
 
+type ViewCarousel = {
+  kind: string;
+  title: string;
+  s3Keys: string[];
+};
+
+function inferViewKind(
+  key: string,
+  views: Record<string, string>,
+  captions: Record<string, string>
+): string | null {
+  const mapped = views[key];
+  if (mapped === "front" || mapped === "close_up" || mapped === "side") return mapped;
+  const caption = (captions[key] ?? "").toLowerCase();
+  if (caption.includes("close-up") || caption.includes("close up")) return "close_up";
+  if (caption.includes("side view") || caption.startsWith("side ")) return "side";
+  if (caption.includes("regular") || caption.includes("front")) return "front";
+  return null;
+}
+
+function viewCarouselsForItem(item: GalleryItem, fallbackTitle: string): ViewCarousel[] {
+  const keys = item.image_s3_keys ?? [];
+  const isProduct = item.category === "product-shoot";
+  const isModel = item.category === "model-shoot";
+  if (keys.length === 0 || (!isProduct && !isModel)) {
+    return [{ kind: "all", title: fallbackTitle, s3Keys: keys }];
+  }
+
+  const views = galleryImageViews(item.analysis);
+  const captions = galleryImageCaptions(item.analysis);
+  const secondKind = isProduct ? "side" : "close_up";
+  const frontKeys: string[] = [];
+  const secondKeys: string[] = [];
+  const unknown: string[] = [];
+
+  for (const key of keys) {
+    const kind = inferViewKind(key, views, captions);
+    if (kind === secondKind) secondKeys.push(key);
+    else if (kind === "front") frontKeys.push(key);
+    else unknown.push(key);
+  }
+
+  if (
+    frontKeys.length === 0 &&
+    secondKeys.length === 0 &&
+    keys.length === 2 &&
+    Object.keys(views).length === 0
+  ) {
+    return [
+      { kind: "front", title: isProduct ? "Front view" : "Regular view", s3Keys: [keys[0]] },
+      { kind: secondKind, title: isProduct ? "Side view" : "Close-up view", s3Keys: [keys[1]] },
+    ];
+  }
+
+  if (frontKeys.length > 0 && secondKeys.length > 0) {
+    if (unknown.length) frontKeys.push(...unknown);
+    return [
+      { kind: "front", title: isProduct ? "Front view" : "Regular view", s3Keys: frontKeys },
+      { kind: secondKind, title: isProduct ? "Side view" : "Close-up view", s3Keys: secondKeys },
+    ];
+  }
+
+  return [{ kind: "all", title: fallbackTitle, s3Keys: keys }];
+}
+
 export function GalleryItemDetail({
   item,
   token,
@@ -60,22 +125,16 @@ export function GalleryItemDetail({
 }: Props) {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [carouselOpen, setCarouselOpen] = useState(false);
-  const [carouselStartIndex, setCarouselStartIndex] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignProductId, setAssignProductId] = useState("");
   const [assigning, setAssigning] = useState(false);
-  const imageKeys = item.image_s3_keys ?? [];
   const canAssign = ["model-shoot", "product-shoot", "edited-image"].includes(String(item.category));
   const captions = galleryImageCaptions(item.analysis);
-  const analysisForDisplay = item.analysis
-    ? Object.fromEntries(
-        Object.entries(item.analysis).filter(([key]) => key !== "image_captions" && key !== "image_views")
-      )
-    : null;
   const carouselTitle = `${categoryTitle}`;
+  const viewCarousels = viewCarouselsForItem(item, carouselTitle);
+  const splitViews = viewCarousels.length > 1;
 
   const confirmDelete = async () => {
     if (!token || !item.uid) return;
@@ -241,42 +300,22 @@ export function GalleryItemDetail({
 
       <Card>
         <CardContent className="space-y-6 pt-6">
-          <div className="space-y-3">
-            <h3 className="text-base font-semibold">Images</h3>
-            <div className="flex flex-wrap gap-3">
-              {imageKeys.map((k, i) => (
-                <button
-                  key={k}
-                  type="button"
-                  className="flex flex-col items-center gap-1"
-                  onClick={() => {
-                    setCarouselStartIndex(i);
-                    setCarouselOpen(true);
-                  }}
-                >
-                  <ImageKeyThumb token={token} s3Key={k} clickable />
-                  {captions[k] ? (
-                    <span className="max-w-24 text-center text-[11px] leading-tight text-muted-foreground">
-                      {captions[k]}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
+          <div className={splitViews ? "grid gap-6 lg:grid-cols-2" : undefined}>
+            {viewCarousels.map((lane) => (
+              <ImageCarouselStage
+                key={lane.kind}
+                token={token}
+                title={lane.title}
+                s3Keys={lane.s3Keys}
+                captions={captions}
+                startIndex={Math.max(0, lane.s3Keys.length - 1)}
+                imageStageClassName={splitViews ? "h-[min(64vh,38rem)]" : "h-[min(78vh,48rem)]"}
+                onManualPhotoEdit={onManualPhotoEdit}
+                onEditImage={onEditImage}
+                onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
+              />
+            ))}
           </div>
-
-          <FullscreenCarouselDialog
-            open={carouselOpen}
-            onOpenChange={setCarouselOpen}
-            token={token}
-            title={carouselTitle}
-            s3Keys={imageKeys}
-            captions={captions}
-            startIndex={carouselStartIndex}
-            onManualPhotoEdit={onManualPhotoEdit}
-            onEditImage={onEditImage}
-            onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
-          />
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <ViewField label="Category" value={item.category} />
@@ -284,13 +323,6 @@ export function GalleryItemDetail({
             <ViewField label="Created" value={formatTableDate(item.created_at)} />
             <ViewField label="Edited" value={formatTableDate(item.edited_at)} />
           </div>
-
-          {analysisForDisplay && Object.keys(analysisForDisplay).length > 0 ? (
-            <div className="space-y-2">
-              <div className="text-base font-semibold">Analysis</div>
-              <pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">{JSON.stringify(analysisForDisplay, null, 2)}</pre>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
     </div>

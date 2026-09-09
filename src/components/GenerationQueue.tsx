@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
-  Clock3,
   ImageIcon,
   Images,
   ListOrdered,
@@ -68,6 +67,26 @@ function isShootJob(job: GenerationJob): boolean {
   );
 }
 
+const THUMBNAIL_SLOTS = 2;
+
+function ThumbnailFace({
+  item,
+  urls,
+}: {
+  item?: GenerationJobThumbnail;
+  urls: Record<string, string>;
+}) {
+  const url = item ? urls[item.s3_key] : undefined;
+  if (item && url) {
+    return <img src={url} alt={item.label} className="h-full w-full object-cover" />;
+  }
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-muted">
+      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+    </div>
+  );
+}
+
 function JobThumbnails({
   items,
   urls,
@@ -75,26 +94,30 @@ function JobThumbnails({
   items: GenerationJobThumbnail[];
   urls: Record<string, string>;
 }) {
-  if (items.length === 0) return null;
+  const slots = items.slice(0, THUMBNAIL_SLOTS);
   return (
-    <div className="flex shrink-0 gap-2">
-      {items.map((item) => {
-        const url = urls[item.s3_key];
-        return (
-          <div key={`${item.label}:${item.s3_key}`} className="w-16 text-center">
-            <div className="h-16 w-16 overflow-hidden rounded-md border bg-muted">
-              {url ? (
-                <img src={url} alt={item.label} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                </div>
-              )}
-            </div>
-            <p className="mt-1 truncate text-[10px] leading-tight text-muted-foreground">{item.label}</p>
+    <div className="w-full">
+      <div className="aspect-square w-full overflow-hidden rounded-md border bg-muted">
+        {slots.length <= 1 ? (
+          <ThumbnailFace item={slots[0]} urls={urls} />
+        ) : (
+          <div className="grid h-full grid-cols-2 divide-x divide-border">
+            {slots.map((item) => (
+              <ThumbnailFace key={`${item.label}:${item.s3_key}`} item={item} urls={urls} />
+            ))}
           </div>
-        );
-      })}
+        )}
+      </div>
+      <div className={`mt-1 grid h-3 gap-1 ${slots.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+        {(slots.length > 0 ? slots : [{ label: "", s3_key: "" }]).map((item, index) => (
+          <p
+            key={item.s3_key || `label-${index}`}
+            className="truncate text-center text-[10px] leading-tight text-muted-foreground"
+          >
+            {item.label}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
@@ -257,27 +280,26 @@ export default function GenerationQueue({
         <div className="space-y-3">
           {jobs.map((job) => (
             <Card key={job.uid}>
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 items-start gap-3">
-                  <JobThumbnails items={generationJobThumbnails(job)} urls={thumbnailUrls} />
-                  <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{job.title}</p>
-                    <Badge variant={statusVariant(job.status)}>
+              <CardContent className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-3 p-4 sm:grid-cols-[5.5rem_minmax(0,1fr)_12rem] sm:gap-x-5">
+                <JobThumbnails items={generationJobThumbnails(job)} urls={thumbnailUrls} />
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Badge className="shrink-0" variant={statusVariant(job.status)}>
                       {job.status === "processing" && job.status_message
                         ? "Paused"
                         : STATUS_LABEL[job.status]}
                     </Badge>
                     {job.status === "queued" && job.queue_position ? (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="shrink-0 text-xs text-muted-foreground">
                         Position {job.queue_position}
                       </span>
                     ) : null}
                   </div>
+                  <p className="truncate font-medium">{job.title}</p>
                   {job.subtitle ? (
                     <p className="truncate text-sm text-muted-foreground">{job.subtitle}</p>
                   ) : null}
-                  <p className="text-xs text-muted-foreground">
+                  <p className="truncate text-xs text-muted-foreground">
                     Submitted {formatTime(job.created_at)}
                     {job.status === "processing" && job.started_at
                       ? ` · started ${formatTime(job.started_at)}`
@@ -285,19 +307,19 @@ export default function GenerationQueue({
                     {job.completed_at ? ` · finished ${formatTime(job.completed_at)}` : ""}
                   </p>
                   {job.status === "failed" && job.error_message ? (
-                    <p className="text-sm text-destructive">{job.error_message}</p>
+                    <p className="truncate text-sm text-destructive">{job.error_message}</p>
                   ) : null}
                   {job.status === "processing" && job.status_message ? (
-                    <p className="text-sm text-amber-800">{job.status_message}</p>
+                    <p className="truncate text-sm text-amber-800">{job.status_message}</p>
                   ) : null}
-                  </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <div className="col-span-2 flex w-full flex-col items-stretch justify-center gap-2 sm:col-span-1">
                   {job.status === "queued" ? (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
+                      className="w-full"
                       disabled={cancellingUid === job.uid}
                       onClick={() => void handleCancel(job)}
                     >
@@ -310,7 +332,7 @@ export default function GenerationQueue({
                     </Button>
                   ) : null}
                   {job.status === "processing" ? (
-                    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                    <span className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-transparent text-sm text-muted-foreground">
                       {job.status_message ? (
                         <>
                           <PauseCircle className="h-3.5 w-3.5 text-amber-700" />
@@ -324,26 +346,20 @@ export default function GenerationQueue({
                       )}
                     </span>
                   ) : null}
-                  {job.status === "queued" ? (
-                    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                      <Clock3 className="h-3.5 w-3.5" />
-                      Waiting
-                    </span>
-                  ) : null}
                   {job.status === "completed" && isShootJob(job) && generationJobDraftUid(job) ? (
-                    <Button type="button" size="sm" onClick={() => setSelected(job)}>
+                    <Button type="button" size="sm" className="w-full" onClick={() => setSelected(job)}>
                       <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                       Open result
                     </Button>
                   ) : null}
                   {job.status === "completed" && job.job_type === "image_edit" ? (
-                    <Button type="button" size="sm" onClick={() => setSelected(job)}>
+                    <Button type="button" size="sm" className="w-full" onClick={() => setSelected(job)}>
                       <Wand2 className="mr-1 h-3.5 w-3.5" />
                       View edit
                     </Button>
                   ) : null}
                   {job.status === "completed" && job.job_type === "model_pose" && onOpenModelPoses ? (
-                    <Button type="button" size="sm" onClick={onOpenModelPoses}>
+                    <Button type="button" size="sm" className="w-full" onClick={onOpenModelPoses}>
                       Open model poses
                     </Button>
                   ) : null}

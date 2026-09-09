@@ -1245,6 +1245,18 @@ export function galleryImageCaptions(
   return out;
 }
 
+export function galleryImageViews(
+  analysis?: Record<string, unknown> | null
+): Record<string, string> {
+  const raw = analysis?.image_views;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key && typeof value === "string" && value.trim()) out[key] = value.trim();
+  }
+  return out;
+}
+
 export type GalleryListResponse = {
   items: GalleryItem[];
   page: number;
