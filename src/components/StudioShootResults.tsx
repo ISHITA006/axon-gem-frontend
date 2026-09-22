@@ -30,6 +30,7 @@ import {
   productShootViewBudget,
 } from "@/lib/modelShootCopy";
 import { useToast } from "@/hooks/use-toast";
+import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 
 interface StudioShootResultsProps {
   loading: boolean;
@@ -339,6 +340,10 @@ export default function StudioShootResults({
         <Button variant="ghost" onClick={onBack} className="gap-2">
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Button>
+        <AddToCataloguePanel
+          token={token}
+          images={imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }))}
+        />
       </div>
 
       {results.status === "partial" && (results.frontError || results.sideError) && (

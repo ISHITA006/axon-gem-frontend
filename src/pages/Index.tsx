@@ -24,6 +24,10 @@ import BrandKit from "@/components/BrandKit";
 import ProductBrandKit from "@/components/ProductBrandKit";
 import GenerationUsage from "@/components/GenerationUsage";
 import GenerationQueue from "@/components/GenerationQueue";
+import ManageCatalogue from "@/components/ManageCatalogue";
+import ManageCatalogueFields from "@/components/ManageCatalogueFields";
+import ManageCatalogueTheme from "@/components/ManageCatalogueTheme";
+import ManageCatalogViewers from "@/components/ManageCatalogViewers";
 
 function PremiumModelPauseBanner({ onViewQueue }: { onViewQueue: () => void }) {
   const queue = useGenerationQueueOptional();
@@ -178,6 +182,10 @@ export default function Index() {
               <ManageModelPoses onViewQueue={() => setActiveTab("generationQueue")} />
             )}
             {activeTab === "backgrounds" && <ManageBackgrounds />}
+            {activeTab === "catalogue" && <ManageCatalogue />}
+            {activeTab === "catalogueFields" && <ManageCatalogueFields />}
+            {activeTab === "catalogueTheme" && <ManageCatalogueTheme />}
+            {activeTab === "catalogViewerManagement" && <ManageCatalogViewers />}
           </main>
         </div>
       </div>

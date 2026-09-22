@@ -31,6 +31,7 @@ import {
   resolveModelShootViews,
 } from "@/lib/modelShootCopy";
 import { useToast } from "@/hooks/use-toast";
+import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 
 interface TryOnResultsProps {
   loading: boolean;
@@ -354,6 +355,15 @@ export default function TryOnResults({
         <Button variant="ghost" onClick={onBack} className="gap-2">
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Button>
+        <AddToCataloguePanel
+          token={token}
+          images={imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }))}
+          defaults={{
+            itemCode: results?.analysis?.item_code || undefined,
+            name: results?.analysis?.name || undefined,
+            description: results?.analysis?.description || undefined,
+          }}
+        />
       </div>
 
       <Card>

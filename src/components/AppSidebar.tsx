@@ -19,6 +19,10 @@ import {
   Settings,
   ChevronUp,
   ListOrdered,
+  LibraryBig,
+  FormInput,
+  Paintbrush,
+  UserCog,
 } from "lucide-react";
 import {
   Sidebar,
@@ -56,7 +60,11 @@ export type TabValue =
   | "brandKit"
   | "productBrandKit"
   | "generationUsage"
-  | "generationQueue";
+  | "generationQueue"
+  | "catalogue"
+  | "catalogueFields"
+  | "catalogueTheme"
+  | "catalogViewerManagement";
 
 type NavItem = { title: string; value: TabValue; icon: React.ElementType };
 
@@ -66,6 +74,13 @@ const mainNavItems: NavItem[] = [
   { title: "Edit Image", value: "editImage", icon: Wand2 },
   { title: "Generation Queue", value: "generationQueue", icon: ListOrdered },
   { title: "My Gallery", value: "gallery", icon: Images },
+  { title: "Catalogue", value: "catalogue", icon: LibraryBig },
+];
+
+const catalogueNavItems: NavItem[] = [
+  { title: "Catalog Fields", value: "catalogueFields", icon: FormInput },
+  { title: "Catalog Theme", value: "catalogueTheme", icon: Paintbrush },
+  { title: "Catalog Viewers", value: "catalogViewerManagement", icon: UserCog },
 ];
 
 const settingsNavItems: NavItem[] = [
@@ -81,7 +96,9 @@ const settingsNavItems: NavItem[] = [
   { title: "Model Shoot Brand Kit", value: "brandKit", icon: Palette },
 ];
 
-const settingsTabValues = new Set(settingsNavItems.map((item) => item.value));
+const settingsTabValues = new Set(
+  [...settingsNavItems, ...catalogueNavItems].map((item) => item.value),
+);
 
 interface AppSidebarProps {
   activeTab: TabValue;
@@ -175,6 +192,16 @@ export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <SidebarMenuSub className="max-h-[min(50vh,22rem)] overflow-y-auto">
+                      {catalogueNavItems.map((item) => (
+                        <SidebarMenuSubItem key={item.value}>
+                          <SidebarMenuSubButton asChild isActive={activeTab === item.value}>
+                            <button type="button" onClick={() => onTabChange(item.value)}>
+                              <item.icon />
+                              <span>{item.title}</span>
+                            </button>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
                       {settingsNavItems.map((item) => (
                         <SidebarMenuSubItem key={item.value}>
                           <SidebarMenuSubButton asChild isActive={activeTab === item.value}>

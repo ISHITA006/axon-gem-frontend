@@ -11,16 +11,25 @@ type ApiErrorDetail = string | { msg?: string }[] | { message?: string } | undef
 
 function redirectToLoginOnSessionExpired(): void {
   localStorage.removeItem("auth_token");
-  if (window.location.pathname !== "/login") {
+  if (window.location.pathname !== "/login" && !window.location.pathname.startsWith("/catalogue")) {
     window.location.assign("/login");
   }
 }
 
 function isLoginRequest(res: Response): boolean {
   try {
-    return new URL(res.url).pathname.endsWith("/login");
+    const path = new URL(res.url).pathname;
+    return path.endsWith("/login");
   } catch {
     return res.url.includes("/login");
+  }
+}
+
+function isCatalogViewRequest(res: Response): boolean {
+  try {
+    return new URL(res.url).pathname.includes("/catalogue-view/");
+  } catch {
+    return res.url.includes("/catalogue-view/");
   }
 }
 
@@ -47,8 +56,14 @@ async function parseApiErrorMessage(res: Response, fallback: string): Promise<st
 
 async function throwApiError(res: Response, fallback: string): Promise<never> {
   const message = await parseApiErrorMessage(res, fallback);
-  if (res.status === 401 && !isLoginRequest(res)) {
+  if (res.status === 401 && !isLoginRequest(res) && !isCatalogViewRequest(res)) {
     redirectToLoginOnSessionExpired();
+  }
+  if (res.status === 401 && isCatalogViewRequest(res) && !isLoginRequest(res)) {
+    localStorage.removeItem("catalog_view_token");
+    if (window.location.pathname.startsWith("/catalogue") && window.location.pathname !== "/catalogue/login") {
+      window.location.assign("/catalogue/login");
+    }
   }
   throw new Error(message);
 }
@@ -2151,4 +2166,430 @@ export async function apiUpdateInvoiceSettings(
   });
   await assertOk(res, "Failed to save invoice email");
   return res.json() as Promise<InvoiceSettings>;
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+export type CatalogueFieldType = "text" | "number" | "dropdown" | "multiselect" | "boolean";
+
+export type CatalogueFieldDefinition = {
+  uid: string;
+  key: string;
+  label: string;
+  field_type: CatalogueFieldType;
+  required: boolean;
+  validation?: Record<string, unknown> | null;
+  options?: string[] | null;
+  filterable: boolean;
+  show_on_buyer: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CatalogueImage = {
+  uid: string;
+  item_uid: string;
+  image_s3_key: string;
+  sort_order: number;
+};
+
+export type CatalogueItem = {
+  uid: string;
+  item_code: string;
+  name: string;
+  description?: string | null;
+  custom_fields: Record<string, unknown>;
+  images: CatalogueImage[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type CatalogueListResponse = {
+  data: CatalogueItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  page_count: number;
+};
+
+export type CatalogueTheme = {
+  uid: string;
+  template_id?: string;
+  logo_s3_key?: string | null;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  background_color: string;
+  text_color: string;
+  font_family: string;
+  card_layout: "grid" | "list";
+  card_size: "sm" | "md" | "lg";
+  page_title?: string | null;
+  subtitle?: string | null;
+  updated_at: string;
+};
+
+export type CatalogViewerRecord = {
+  uid: string;
+  username: string;
+  password: string;
+  active: boolean;
+};
+
+export type CatalogueItemFilters = {
+  q?: string;
+  page?: number;
+  sort_by?: "updated_at" | "created_at" | "name" | "item_code";
+  sort_dir?: "asc" | "desc";
+  fieldFilters?: Record<string, string>;
+};
+
+function buildCatalogueFilterParams(filters?: CatalogueItemFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (!filters) return params;
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.q?.trim()) params.set("q", filters.q.trim());
+  if (filters.sort_by) params.set("sort_by", filters.sort_by);
+  if (filters.sort_dir) params.set("sort_dir", filters.sort_dir);
+  if (filters.fieldFilters) {
+    for (const [key, value] of Object.entries(filters.fieldFilters)) {
+      if (value != null && String(value).trim() !== "") {
+        params.set(key, String(value));
+      }
+    }
+  }
+  return params;
+}
+
+export async function apiListCatalogueFields(token: string) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/fields`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch catalogue fields");
+  return res.json() as Promise<CatalogueFieldDefinition[]>;
+}
+
+export async function apiCreateCatalogueField(
+  token: string,
+  payload: {
+    key?: string;
+    label: string;
+    field_type: CatalogueFieldType;
+    required?: boolean;
+    validation?: Record<string, unknown> | null;
+    options?: string[] | null;
+    filterable?: boolean;
+    show_on_buyer?: boolean;
+    sort_order?: number;
+  },
+) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/fields`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  await assertOk(res, "Failed to create field");
+  return res.json() as Promise<CatalogueFieldDefinition>;
+}
+
+export async function apiUpdateCatalogueField(
+  token: string,
+  uid: string,
+  payload: Partial<{
+    label: string;
+    field_type: CatalogueFieldType;
+    required: boolean;
+    validation: Record<string, unknown> | null;
+    options: string[] | null;
+    filterable: boolean;
+    show_on_buyer: boolean;
+    sort_order: number;
+  }>,
+) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/fields/${encodeURIComponent(uid)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  await assertOk(res, "Failed to update field");
+  return res.json() as Promise<CatalogueFieldDefinition>;
+}
+
+export async function apiDeleteCatalogueField(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/fields/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to delete field");
+}
+
+export async function apiReorderCatalogueFields(token: string, orderedUids: string[]) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/fields/reorder`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ordered_uids: orderedUids }),
+  });
+  await assertOk(res, "Failed to reorder fields");
+  return res.json() as Promise<CatalogueFieldDefinition[]>;
+}
+
+export async function apiGetCatalogueTheme(token: string) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/theme`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch catalogue theme");
+  return res.json() as Promise<CatalogueTheme>;
+}
+
+export async function apiUpdateCatalogueTheme(
+  token: string,
+  payload: Partial<CatalogueTheme> & { clear_logo?: boolean },
+) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/theme`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  await assertOk(res, "Failed to update catalogue theme");
+  return res.json() as Promise<CatalogueTheme>;
+}
+
+export async function apiUploadCatalogueThemeLogo(token: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", await asUploadableImage(file));
+  const res = await fetch(`${API_BASE_URL}/catalogue/theme/logo`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Failed to upload logo");
+  return res.json() as Promise<CatalogueTheme>;
+}
+
+export async function apiListCatalogueItems(token: string, filters?: CatalogueItemFilters) {
+  const params = buildCatalogueFilterParams(filters);
+  const res = await fetch(`${API_BASE_URL}/catalogue/items?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch catalogue items");
+  return res.json() as Promise<CatalogueListResponse>;
+}
+
+export async function apiGetCatalogueItem(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/${encodeURIComponent(uid)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch catalogue item");
+  return res.json() as Promise<CatalogueItem>;
+}
+
+export async function apiCreateCatalogueItem(
+  token: string,
+  payload: {
+    itemCode: string;
+    name: string;
+    description?: string;
+    imageS3Keys: string[];
+    customFields?: Record<string, unknown>;
+  },
+) {
+  const formData = new FormData();
+  formData.append("item_code", payload.itemCode);
+  formData.append("name", payload.name);
+  if (payload.description) formData.append("description", payload.description);
+  for (const key of payload.imageS3Keys) {
+    formData.append("image_s3_keys", key);
+  }
+  formData.append("custom_fields", JSON.stringify(payload.customFields ?? {}));
+  const res = await fetch(`${API_BASE_URL}/catalogue`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Failed to create catalogue item");
+  return res.json() as Promise<CatalogueItem>;
+}
+
+export async function apiUpdateCatalogueItem(
+  token: string,
+  uid: string,
+  payload: {
+    itemCode: string;
+    name: string;
+    description?: string;
+    imageS3Keys: string[];
+    customFields?: Record<string, unknown>;
+  },
+) {
+  const formData = new FormData();
+  formData.append("item_code", payload.itemCode);
+  formData.append("name", payload.name);
+  if (payload.description != null) formData.append("description", payload.description);
+  for (const key of payload.imageS3Keys) {
+    formData.append("image_s3_keys", key);
+  }
+  formData.append("custom_fields", JSON.stringify(payload.customFields ?? {}));
+  const res = await fetch(`${API_BASE_URL}/catalogue/${encodeURIComponent(uid)}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Failed to update catalogue item");
+  return res.json() as Promise<CatalogueItem>;
+}
+
+export async function apiDeleteCatalogueItem(token: string, uid: string) {
+  const res = await fetch(`${API_BASE_URL}/catalogue/${encodeURIComponent(uid)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to delete catalogue item");
+}
+
+export async function apiExportCatalogue(
+  token: string,
+  format: "pdf" | "pptx",
+  filters?: CatalogueItemFilters,
+) {
+  const params = buildCatalogueFilterParams(filters);
+  const res = await fetch(`${API_BASE_URL}/catalogue/export/${format}?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, `Failed to export catalogue ${format.toUpperCase()}`);
+  const blob = await res.blob();
+  const filename = filenameFromContentDisposition(
+    res.headers.get("Content-Disposition"),
+    `catalogue-export.${format}`,
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function apiEditCatalogueImage(
+  token: string,
+  payload: { originalImageS3Key: string; file: File },
+) {
+  const formData = new FormData();
+  formData.append("original_image_s3_key", payload.originalImageS3Key);
+  formData.append("file", await asUploadableImage(payload.file));
+  const res = await fetch(`${API_BASE_URL}/edit-image`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Failed to edit catalogue image");
+  const data = (await res.json()) as {
+    edited_image_s3_key?: string;
+    image_s3_key?: string;
+    preview_url?: string;
+    image_url?: string;
+  };
+  return {
+    editedImageS3Key: data.edited_image_s3_key || data.image_s3_key || "",
+    previewUrl: data.preview_url || data.image_url,
+  };
+}
+
+export async function apiCreateCatalogViewer(token: string, username: string, password: string) {
+  const params = new URLSearchParams({ username, password });
+  const res = await fetch(`${API_BASE_URL}/catalog-viewer-manager?${params.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to create catalog viewer user");
+  return res.json() as Promise<CatalogViewerRecord>;
+}
+
+export async function apiListCatalogViewers(token: string) {
+  const res = await fetch(`${API_BASE_URL}/catalog-viewer-manager`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res, "Failed to fetch catalog viewer users");
+  return res.json() as Promise<CatalogViewerRecord[]>;
+}
+
+export async function apiRevokeCatalogViewer(token: string, uid: string) {
+  const res = await fetch(
+    `${API_BASE_URL}/catalog-viewer-manager/${encodeURIComponent(uid)}/revoke`,
+    { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+  );
+  await assertOk(res, "Failed to revoke access");
+  return res.json() as Promise<{ uid: string; active: boolean }>;
+}
+
+export async function apiActivateCatalogViewer(token: string, uid: string) {
+  const res = await fetch(
+    `${API_BASE_URL}/catalog-viewer-manager/${encodeURIComponent(uid)}/activate`,
+    { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+  );
+  await assertOk(res, "Failed to activate access");
+  return res.json() as Promise<{ uid: string; active: boolean }>;
+}
+
+// Buyer catalogue-view APIs (viewer token)
+export async function apiCatalogViewLogin(username: string, password: string) {
+  const form = new URLSearchParams();
+  form.set("username", username);
+  form.set("password", password);
+  const res = await fetch(`${API_BASE_URL}/catalogue-view/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form,
+  });
+  await assertOk(res, "Login failed");
+  return res.json() as Promise<{ access_token: string; token_type: string; expires_in_minutes: number }>;
+}
+
+export async function apiCatalogViewTheme() {
+  const res = await fetch(`${API_BASE_URL}/catalogue-view/theme`);
+  await assertOk(res, "Failed to fetch theme");
+  return res.json() as Promise<CatalogueTheme>;
+}
+
+export async function apiCatalogViewFields(viewerToken: string) {
+  const res = await fetch(`${API_BASE_URL}/catalogue-view/fields`, {
+    headers: { Authorization: `Bearer ${viewerToken}` },
+  });
+  await assertOk(res, "Failed to fetch fields");
+  return res.json() as Promise<CatalogueFieldDefinition[]>;
+}
+
+export async function apiCatalogViewItems(viewerToken: string, filters?: CatalogueItemFilters) {
+  const params = buildCatalogueFilterParams(filters);
+  const res = await fetch(`${API_BASE_URL}/catalogue-view/items?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${viewerToken}` },
+  });
+  await assertOk(res, "Failed to fetch catalogue items");
+  return res.json() as Promise<CatalogueListResponse>;
+}
+
+export async function apiCatalogViewPresignedUrl(viewerToken: string, s3Key: string) {
+  const res = await fetch(
+    `${API_BASE_URL}/catalogue-view/presigned-url?s3_key=${encodeURIComponent(s3Key)}`,
+    { headers: { Authorization: `Bearer ${viewerToken}` } },
+  );
+  await assertOk(res, "Failed to get image URL");
+  const data = (await res.json()) as { url?: string; download_url?: string };
+  return data.url || data.download_url || "";
 }

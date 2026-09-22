@@ -36,6 +36,7 @@ import {
 } from "@/lib/api";
 import { formatTableDate } from "@/lib/utils";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import AddToCataloguePanel from "@/components/AddToCataloguePanel";
 
 type Props = {
   item: GalleryItem;
@@ -272,6 +273,15 @@ export function GalleryItemDetail({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <AddToCataloguePanel
+            token={token}
+            images={(item.image_s3_keys ?? []).map((s3Key) => ({ url: "", s3Key }))}
+            defaults={{
+              itemCode: item.product_sku || (typeof item.analysis?.item_code === "string" ? item.analysis.item_code : undefined),
+              name: item.product_name || (typeof item.analysis?.name === "string" ? item.analysis.name : undefined),
+              description: typeof item.analysis?.description === "string" ? item.analysis.description : undefined,
+            }}
+          />
           {canAssign ? (
             <Button
               type="button"
