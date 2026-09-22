@@ -9,6 +9,21 @@ async function asUploadableImage(file: File): Promise<File> {
 
 type ApiErrorDetail = string | { msg?: string }[] | { message?: string } | undefined;
 
+function redirectToLoginOnSessionExpired(): void {
+  localStorage.removeItem("auth_token");
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+}
+
+function isLoginRequest(res: Response): boolean {
+  try {
+    return new URL(res.url).pathname.endsWith("/login");
+  } catch {
+    return res.url.includes("/login");
+  }
+}
+
 async function parseApiErrorMessage(res: Response, fallback: string): Promise<string> {
   const body = (await res.json().catch(() => ({ detail: fallback }))) as {
     detail?: ApiErrorDetail;
@@ -30,8 +45,16 @@ async function parseApiErrorMessage(res: Response, fallback: string): Promise<st
   return fallback;
 }
 
+async function throwApiError(res: Response, fallback: string): Promise<never> {
+  const message = await parseApiErrorMessage(res, fallback);
+  if (res.status === 401 && !isLoginRequest(res)) {
+    redirectToLoginOnSessionExpired();
+  }
+  throw new Error(message);
+}
+
 async function assertOk(res: Response, fallback: string): Promise<void> {
-  if (!res.ok) throw new Error(await parseApiErrorMessage(res, fallback));
+  if (!res.ok) await throwApiError(res, fallback);
 }
 
 export type GenerationJobType =
@@ -1542,6 +1565,9 @@ export async function apiCreateStudioShoot(
   let res = await postStudioShootRequest(preparedFile, preparedSideFile, preparedBackgroundFile);
 
   if (!res.ok) {
+    if (res.status === 401) {
+      await throwApiError(res, "Failed to create studio shoot");
+    }
     const errMessage = await parseApiErrorMessage(res, "Failed to create studio shoot");
     const isPayloadTooLarge =
       res.status === 413 || errMessage.toUpperCase().includes("FUNCTION_PAYLOAD_TOO_LARGE");
@@ -1558,6 +1584,9 @@ export async function apiCreateStudioShoot(
           : null;
       res = await postStudioShootRequest(strictFile, strictSideFile, strictBackgroundFile);
       if (!res.ok) {
+        if (res.status === 401) {
+          await throwApiError(res, "Failed to create studio shoot");
+        }
         const strictErr = await parseApiErrorMessage(res, "Failed to create studio shoot");
         throw new Error(
           strictErr.toUpperCase().includes("FUNCTION_PAYLOAD_TOO_LARGE")
