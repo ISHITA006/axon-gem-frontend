@@ -334,6 +334,34 @@ export default function StudioShootResults({
   const isSaved = Boolean(activeGeneration?.saved);
   const showPager = generations.length > 1;
 
+  /** Every unique still from this shoot (base look + regenerations) for catalogue add. */
+  const catalogueImages = (() => {
+    const seen = new Set<string>();
+    const images: Array<{ url: string; s3Key: string }> = [];
+    for (const gen of generations) {
+      for (const key of [gen.front_image_s3_key, gen.side_image_s3_key]) {
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        const activeMatch = imageItems.find((item) => item.s3Key === key);
+        images.push({ url: activeMatch?.url ?? "", s3Key: key });
+      }
+    }
+    return images.length > 0 ? images : imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }));
+  })();
+
+  const analysis = draft?.analysis;
+  const catalogueDefaults = {
+    itemCode:
+      draft?.product_sku ||
+      (typeof analysis?.item_code === "string" ? analysis.item_code : undefined) ||
+      undefined,
+    name:
+      draft?.product_name ||
+      (typeof analysis?.name === "string" ? analysis.name : undefined) ||
+      undefined,
+    description: typeof analysis?.description === "string" ? analysis.description : undefined,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -342,7 +370,8 @@ export default function StudioShootResults({
         </Button>
         <AddToCataloguePanel
           token={token}
-          images={imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }))}
+          images={catalogueImages}
+          defaults={catalogueDefaults}
         />
       </div>
 

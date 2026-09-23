@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, Trash2, Video } from "lucide-react";
 
 import {
   AlertDialog,
@@ -32,6 +32,7 @@ import {
   apiDeleteGalleryItem,
   galleryImageCaptions,
   galleryImageViews,
+  isVideoS3Key,
   type GalleryItem,
 } from "@/lib/api";
 import { formatTableDate } from "@/lib/utils";
@@ -46,6 +47,7 @@ type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
+  onGenerateCampaignVideo?: (s3Key: string) => void;
   onItemUpdated?: (item: GalleryItem) => void;
 };
 
@@ -122,6 +124,7 @@ export function GalleryItemDetail({
   onEditImage,
   onManualPhotoEdit,
   onOpenTryOnWithJewellery,
+  onGenerateCampaignVideo,
   onItemUpdated,
 }: Props) {
   const { toast } = useToast();
@@ -131,7 +134,15 @@ export function GalleryItemDetail({
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignProductId, setAssignProductId] = useState("");
   const [assigning, setAssigning] = useState(false);
-  const canAssign = ["model-shoot", "product-shoot", "edited-image"].includes(String(item.category));
+  const canAssign = [
+    "model-shoot",
+    "product-shoot",
+    "edited-image",
+    "product-video",
+    "model-video",
+  ].includes(String(item.category));
+  const stillKeys = (item.image_s3_keys ?? []).filter((k) => k && !isVideoS3Key(k));
+  const canGenerateVideo = stillKeys.length > 0;
   const captions = galleryImageCaptions(item.analysis);
   const carouselTitle = `${categoryTitle}`;
   const viewCarousels = viewCarouselsForItem(item, carouselTitle);
@@ -268,11 +279,33 @@ export function GalleryItemDetail({
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Gallery item</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-2xl font-semibold tracking-tight">Gallery item</h2>
+              {item.in_catalog ? (
+                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                  In catalogue
+                </span>
+              ) : null}
+            </div>
             <p className="font-mono text-sm text-muted-foreground">{item.uid}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {onGenerateCampaignVideo && canGenerateVideo ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={!token || deleting}
+              onClick={() => {
+                const key = stillKeys[stillKeys.length - 1];
+                if (!key) return;
+                onGenerateCampaignVideo(key);
+              }}
+            >
+              <Video className="h-4 w-4" /> Generate video
+            </Button>
+          ) : null}
           <AddToCataloguePanel
             token={token}
             images={(item.image_s3_keys ?? []).map((s3Key) => ({ url: "", s3Key }))}
@@ -280,6 +313,11 @@ export function GalleryItemDetail({
               itemCode: item.product_sku || (typeof item.analysis?.item_code === "string" ? item.analysis.item_code : undefined),
               name: item.product_name || (typeof item.analysis?.name === "string" ? item.analysis.name : undefined),
               description: typeof item.analysis?.description === "string" ? item.analysis.description : undefined,
+            }}
+            onSuccess={() => {
+              void qc.invalidateQueries({ queryKey: ["gallery-items"] });
+              void qc.invalidateQueries({ queryKey: ["gallery-products"] });
+              onItemUpdated?.({ ...item, in_catalog: true });
             }}
           />
           {canAssign ? (
@@ -323,6 +361,11 @@ export function GalleryItemDetail({
                 onManualPhotoEdit={onManualPhotoEdit}
                 onEditImage={onEditImage}
                 onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
+                onGenerateCampaignVideo={
+                  onGenerateCampaignVideo
+                    ? (s3Key) => onGenerateCampaignVideo(s3Key)
+                    : undefined
+                }
               />
             ))}
           </div>

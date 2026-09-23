@@ -23,6 +23,7 @@ import {
   FormInput,
   Paintbrush,
   UserCog,
+  Video,
 } from "lucide-react";
 import {
   Sidebar,
@@ -48,6 +49,7 @@ export type TabValue =
   | "manualPhotoEdit"
   | "gallery"
   | "uploadStudioShoot"
+  | "videoShoot"
   | "models"
   | "poses"
   | "clothing"
@@ -71,6 +73,7 @@ type NavItem = { title: string; value: TabValue; icon: React.ElementType };
 const mainNavItems: NavItem[] = [
   { title: "Product Shoot", value: "uploadStudioShoot", icon: Gem },
   { title: "Model Shoot", value: "tryon", icon: SquareUser },
+  { title: "Video Shoot", value: "videoShoot", icon: Video },
   { title: "Edit Image", value: "editImage", icon: Wand2 },
   { title: "Generation Queue", value: "generationQueue", icon: ListOrdered },
   { title: "My Gallery", value: "gallery", icon: Images },

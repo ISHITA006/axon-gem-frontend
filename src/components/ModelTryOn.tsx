@@ -13,13 +13,16 @@ import {
   apiListCloseUpPoses,
   apiListClothing,
   apiGetBackgroundImages,
+  apiUploadTempImage,
   getPresignedUrl,
   TRY_ON_ASPECT_RATIOS,
   TRY_ON_OUTPUT_QUALITIES,
   DIMENSION_TYPES,
   DIMENSION_TYPE_LABELS,
   DIMENSION_UNITS,
+  type BackgroundMode,
   type BrandKitRecord,
+  type CustomBackgroundInput,
   type DimensionType,
   type DimensionUnit,
   type Measurement,
@@ -34,10 +37,11 @@ import {
   type TryOnAspectRatio,
   type TryOnOutputQuality,
 } from "@/lib/api";
+import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import TryOnResults from "@/components/TryOnResults";
 import ModelShootReviewSession from "@/components/ModelShootReviewSession";
 import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
-import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -53,13 +57,14 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Upload, ImageIcon, Check, Loader2, Plus, Trash2, Ruler, Brush } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   ensureGenerationNotifyPermission,
   notifyGenerationError,
 } from "@/lib/generationNotify";
-import { toBrowserDecodedImageFile } from "@/lib/heicImage";
+import { createDisplayableImageObjectUrl, toBrowserDecodedImageFile } from "@/lib/heicImage";
 import { cn } from "@/lib/utils";
 import PlacementShadeCanvas, {
   type PlacementShadeCanvasHandle,
@@ -79,6 +84,7 @@ export interface ModelTryOnProps {
   imageUrl?: string;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
   /** Clear gallery-sourced jewellery after a request is queued. */
   onQueued?: () => void;
   onViewQueue?: () => void;
@@ -158,6 +164,7 @@ export default function ModelTryOn({
   imageUrl,
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
   onQueued,
   onViewQueue,
 }: ModelTryOnProps) {
@@ -185,7 +192,12 @@ export default function ModelTryOn({
   const [brandKits, setBrandKits] = useState<BrandKitRecord[]>([]);
   const [selectedBrandKitUid, setSelectedBrandKitUid] = useState<string>(NO_BRAND_KIT);
 
-  const [useBackground, setUseBackground] = useState(false);
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("white");
+  const [backgroundInputMode, setBackgroundInputMode] = useState<CustomBackgroundInput>("preset");
+  const [backgroundText, setBackgroundText] = useState("");
+  const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
+  const [backgroundPreviewUrl, setBackgroundPreviewUrl] = useState<string | null>(null);
+  const backgroundInputRef = useRef<HTMLInputElement | null>(null);
   const [backgroundKeys, setBackgroundKeys] = useState<string[]>([]);
   const [backgroundUrls, setBackgroundUrls] = useState<Record<string, string>>({});
   const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
@@ -503,6 +515,10 @@ export default function ModelTryOn({
 
   useEffect(() => {
     if (!token) return;
+    if (backgroundMode !== "custom" || backgroundInputMode !== "preset") {
+      setBackgroundsLoading(false);
+      return;
+    }
     setBackgroundsLoading(true);
     apiGetBackgroundImages(token)
       .then(async (data) => {
@@ -523,7 +539,32 @@ export default function ModelTryOn({
         // Backgrounds are optional — silently ignore load failures.
       })
       .finally(() => setBackgroundsLoading(false));
-  }, [token]);
+  }, [token, backgroundMode, backgroundInputMode]);
+
+  useEffect(() => {
+    if (!backgroundFile) {
+      setBackgroundPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    void createDisplayableImageObjectUrl(backgroundFile)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrl = url;
+        setBackgroundPreviewUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setBackgroundPreviewUrl(null);
+      });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [backgroundFile]);
 
   useEffect(() => {
     const key = s3Key?.trim();
@@ -643,13 +684,44 @@ export default function ModelTryOn({
     setCloseUpPlacementHasPaint(false);
     placementShadeRef.current?.clear();
     closeUpPlacementShadeRef.current?.clear();
-    setUseBackground(false);
+    setBackgroundMode("white");
+    setBackgroundInputMode("preset");
+    setBackgroundText("");
+    setBackgroundFile(null);
     setSelectedBackground(null);
+    if (backgroundInputRef.current) backgroundInputRef.current.value = "";
     setUseDimensions(false);
     setDimensionRows([]);
     setProductId("");
     onQueued?.();
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleBackgroundModeChange = (mode: BackgroundMode) => {
+    setBackgroundMode(mode);
+    if (mode === "brand_kit") {
+      const active = brandKits.find((kit) => kit.is_active);
+      if (active && selectedBrandKitUid === NO_BRAND_KIT) {
+        setSelectedBrandKitUid(active.uid);
+      }
+    }
+    if (mode !== "custom") {
+      setBackgroundText("");
+      setBackgroundFile(null);
+      setSelectedBackground(null);
+      setBackgroundInputMode("preset");
+      if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+    }
+  };
+
+  const handleBackgroundInputModeChange = (mode: CustomBackgroundInput) => {
+    setBackgroundInputMode(mode);
+    if (mode !== "description") setBackgroundText("");
+    if (mode !== "upload") {
+      setBackgroundFile(null);
+      if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+    }
+    if (mode !== "preset") setSelectedBackground(null);
   };
 
   const handleGenerate = async () => {
@@ -691,13 +763,39 @@ export default function ModelTryOn({
       });
       return;
     }
-    if (useBackground && !selectedBackground) {
+    if (backgroundMode === "brand_kit" && selectedBrandKitUid === NO_BRAND_KIT) {
       toast({
-        title: "Missing background",
-        description: "Select a background, or turn off the background option.",
+        title: "Brand kit required",
+        description: "Select a brand kit to infer the background, or choose another option.",
         variant: "destructive",
       });
       return;
+    }
+    if (backgroundMode === "custom") {
+      if (backgroundInputMode === "description" && !backgroundText.trim()) {
+        toast({
+          title: "Missing background",
+          description: "Enter a background description.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (backgroundInputMode === "upload" && !backgroundFile) {
+        toast({
+          title: "Missing background",
+          description: "Upload a background reference image.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (backgroundInputMode === "preset" && !selectedBackground) {
+        toast({
+          title: "Missing background",
+          description: "Select a preset background, or choose another option.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
     if (useClothing && !selectedClothingUid) {
       toast({
@@ -752,6 +850,13 @@ export default function ModelTryOn({
     setGenerating(true);
     void ensureGenerationNotifyPermission();
     try {
+      let customBackgroundS3Key: string | null = null;
+      if (backgroundMode === "custom" && backgroundInputMode === "preset") {
+        customBackgroundS3Key = selectedBackground;
+      } else if (backgroundMode === "custom" && backgroundInputMode === "upload" && backgroundFile) {
+        customBackgroundS3Key = await apiUploadTempImage(token, backgroundFile);
+      }
+
       const job = await apiGenerateTryOn(
         token,
         clothingExternalS3Key ? null : clothingFile,
@@ -761,7 +866,12 @@ export default function ModelTryOn({
           aspectRatio,
           outputQuality,
           brandKitUid: selectedBrandKitUid,
-          backgroundS3Key: useBackground ? selectedBackground : null,
+          backgroundMode,
+          backgroundS3Key: customBackgroundS3Key,
+          backgroundText:
+            backgroundMode === "custom" && backgroundInputMode === "description"
+              ? backgroundText.trim()
+              : null,
           dimensions: useDimensions ? collectMeasurements() : null,
           poseSelected: generateFront && wantModelPose,
           modelPoseS3Key: generateFront && wantModelPose ? selectedModelPoseS3Key : null,
@@ -807,6 +917,7 @@ export default function ModelTryOn({
           loading={generating}
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
+          onOpenVideoShoot={onOpenVideoShoot}
           onDraftChange={setDraft}
           onViewQueue={onViewQueue}
         />
@@ -819,6 +930,9 @@ export default function ModelTryOn({
         onBack={handleBackFromResults}
         token={token}
         progressLabel={progressLabel}
+        onEditImage={onEditImage}
+        onManualPhotoEdit={onManualPhotoEdit}
+        onOpenVideoShoot={onOpenVideoShoot}
       />
     );
   }
@@ -1101,38 +1215,148 @@ export default function ModelTryOn({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Applies your brand's shoot style, poses and styling to the result.
+                {backgroundMode === "brand_kit"
+                  ? "Uses your brand kit's shoot style and inferred set/background."
+                  : "Applies your brand's shoot style, poses and styling to the result."}
               </p>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Background Selection (optional) */}
-      <Collapsible open={useBackground}>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Background (optional)</CardTitle>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="useBackground"
-                  checked={useBackground}
-                  onCheckedChange={(v) => {
-                    const next = !!v;
-                    setUseBackground(next);
-                    if (!next) setSelectedBackground(null);
-                  }}
-                />
-                <Label htmlFor="useBackground" className="text-xs">
-                  Use background
+      {/* Background */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Background</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Choose how the backdrop behind the model is decided.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <RadioGroup
+            value={backgroundMode}
+            onValueChange={(value) => handleBackgroundModeChange(value as BackgroundMode)}
+            className="space-y-2"
+          >
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border bg-muted/20 px-3 py-2">
+              <RadioGroupItem value="white" id="model-bg-white" className="mt-0.5" />
+              <div>
+                <Label htmlFor="model-bg-white" className="cursor-pointer text-sm font-medium">
+                  White
                 </Label>
+                <p className="text-xs text-muted-foreground">
+                  Clean seamless pure white studio cyclorama.
+                </p>
               </div>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent>
-              {backgroundsLoading ? (
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border bg-muted/20 px-3 py-2">
+              <RadioGroupItem value="brand_kit" id="model-bg-brand" className="mt-0.5" />
+              <div>
+                <Label htmlFor="model-bg-brand" className="cursor-pointer text-sm font-medium">
+                  Infer from brand kit
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Match the set and atmosphere from the selected brand kit.
+                </p>
+              </div>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border bg-muted/20 px-3 py-2">
+              <RadioGroupItem value="custom" id="model-bg-custom" className="mt-0.5" />
+              <div>
+                <Label htmlFor="model-bg-custom" className="cursor-pointer text-sm font-medium">
+                  Choose your own
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Describe a backdrop, upload a reference, or pick a preset background.
+                </p>
+              </div>
+            </label>
+          </RadioGroup>
+
+          {backgroundMode === "custom" && (
+            <div className="space-y-4 rounded-lg border bg-muted/10 p-4">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Background input</p>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="model-background-input-mode"
+                      checked={backgroundInputMode === "description"}
+                      onChange={() => handleBackgroundInputModeChange("description")}
+                      className="h-4 w-4"
+                    />
+                    Describe
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="model-background-input-mode"
+                      checked={backgroundInputMode === "upload"}
+                      onChange={() => handleBackgroundInputModeChange("upload")}
+                      className="h-4 w-4"
+                    />
+                    Upload image
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="model-background-input-mode"
+                      checked={backgroundInputMode === "preset"}
+                      onChange={() => handleBackgroundInputModeChange("preset")}
+                      className="h-4 w-4"
+                    />
+                    Preset backgrounds
+                  </label>
+                </div>
+              </div>
+
+              {backgroundInputMode === "description" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="model-background-description" className="text-sm font-medium">
+                    Background description
+                  </Label>
+                  <Textarea
+                    id="model-background-description"
+                    value={backgroundText}
+                    onChange={(e) => setBackgroundText(e.target.value)}
+                    placeholder="e.g. Soft daylight loft with warm stone walls and gentle window light"
+                    rows={3}
+                  />
+                </div>
+              ) : backgroundInputMode === "upload" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="model-background-image-upload" className="text-sm font-medium">
+                    Background reference image
+                  </Label>
+                  <label
+                    id="model-background-image-upload"
+                    className="flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-4 transition hover:border-primary/50 hover:bg-muted/40"
+                  >
+                    {backgroundPreviewUrl ? (
+                      <img
+                        src={backgroundPreviewUrl}
+                        alt="Background preview"
+                        className="max-h-28 w-full rounded object-contain"
+                      />
+                    ) : (
+                      <>
+                        <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground" />
+                        <span className="text-center text-sm text-muted-foreground">
+                          Click to upload a background reference
+                        </span>
+                      </>
+                    )}
+                    <input
+                      ref={backgroundInputRef}
+                      type="file"
+                      accept="image/*,.heic,.heif"
+                      className="hidden"
+                      onChange={(e) => setBackgroundFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                </div>
+              ) : backgroundsLoading ? (
                 <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
                   {Array.from({ length: 6 }).map((_, i) => (
                     <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
@@ -1172,10 +1396,10 @@ export default function ModelTryOn({
                   ))}
                 </div>
               )}
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Exact Dimensions (optional) */}
       <Collapsible open={useDimensions}>
@@ -1633,7 +1857,14 @@ export default function ModelTryOn({
             !selectedModelUid ||
             (generateFront && wantModelPose && !selectedModelPoseS3Key) ||
             (generateCloseUp && wantCloseUpPose && !selectedCloseUpPoseS3Key) ||
-            (useBackground && !selectedBackground) ||
+            (backgroundMode === "brand_kit" && selectedBrandKitUid === NO_BRAND_KIT) ||
+            (backgroundMode === "custom" &&
+              backgroundInputMode === "description" &&
+              !backgroundText.trim()) ||
+            (backgroundMode === "custom" && backgroundInputMode === "upload" && !backgroundFile) ||
+            (backgroundMode === "custom" &&
+              backgroundInputMode === "preset" &&
+              !selectedBackground) ||
             (useClothing && !selectedClothingUid) ||
             (usePlacementShade && generateFront && !placementHasPaint) ||
             (usePlacementShade && generateCloseUp && !closeUpPlacementHasPaint) ||

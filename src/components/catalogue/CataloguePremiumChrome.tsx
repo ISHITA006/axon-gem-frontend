@@ -128,34 +128,33 @@ export function CatalogueGlassPanel({
   );
 }
 
-/** Gradient-rimmed card frame; keep image area aspect 2/3 inside. */
+/** Editorial media frame — full-bleed photo, hairline edge, no thick bezel. */
 export function CatalogueGradientFrame({
   style,
   children,
   className = "",
+  shine = true,
 }: {
   style: ResolvedCatalogueStyle;
   children: ReactNode;
   className?: string;
+  /** Hover shimmer sweep. Disable for static frames (e.g. item zoom). */
+  shine?: boolean;
 }) {
   return (
     <div
-      className={`relative p-[1px] transition duration-500 ${className}`}
+      className={`${shine ? "catalogue-card-shine " : ""}relative overflow-hidden transition duration-500 ${className}`}
       style={{
-        background: style.cardBorderGradient,
-        borderRadius: style.cardRadius,
-        boxShadow: style.cardShadow,
+        borderRadius: "0.35rem",
+        background: style.isDark ? "#0a0a0a" : "#111111",
+        boxShadow: style.isDark
+          ? "0 12px 40px rgba(0,0,0,0.45)"
+          : "0 10px 36px rgba(26,23,20,0.12)",
+        outline: `1px solid ${style.isDark ? "rgba(255,255,255,0.08)" : "rgba(26,23,20,0.08)"}`,
+        outlineOffset: 0,
       }}
     >
-      <div
-        className="catalogue-card-shine relative overflow-hidden"
-        style={{
-          borderRadius: `calc(${style.cardRadius} - 1px)`,
-          background: style.surfaceGradient,
-        }}
-      >
-        {children}
-      </div>
+      {children}
     </div>
   );
 }

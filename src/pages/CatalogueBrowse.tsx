@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Gem, Loader2, LogOut, Search, Sparkles } from "lucide-react";
+import { Gem, ImagePlus, Loader2, LogOut, Search, Sparkles, X } from "lucide-react";
 import { useCatalogViewerAuth } from "@/contexts/CatalogViewerAuthContext";
 import {
   apiCatalogViewFields,
   apiCatalogViewItems,
   apiCatalogViewPresignedUrl,
+  apiCatalogViewSmartSearch,
   apiCatalogViewTheme,
+  isVideoS3Key,
   type CatalogueFieldDefinition,
   type CatalogueItem,
   type CatalogueTheme,
@@ -16,6 +18,7 @@ import {
   resolveCatalogueStyle,
 } from "@/lib/catalogueTemplates";
 import { CatalogueItemZoom } from "@/components/catalogue/CatalogueItemZoom";
+import { BuyerCatalogueCardMedia } from "@/components/catalogue/BuyerCatalogueCardMedia";
 import {
   CatalogueAmbientOrbs,
   CatalogueGlassPanel,
@@ -42,6 +45,13 @@ export default function CatalogueBrowse() {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<CatalogueItem | null>(null);
   const [logoUrl, setLogoUrl] = useState("");
+
+  const [smartText, setSmartText] = useState("");
+  const [smartFile, setSmartFile] = useState<File | null>(null);
+  const [smartPreview, setSmartPreview] = useState("");
+  const [smartMode, setSmartMode] = useState(false);
+  const [smartNonce, setSmartNonce] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const style = useMemo(() => resolveCatalogueStyle(theme), [theme]);
 
@@ -73,6 +83,7 @@ export default function CatalogueBrowse() {
 
   useEffect(() => {
     if (!token) return;
+    if (smartMode) return;
     setLoading(true);
     void apiCatalogViewItems(token, { page, q, fieldFilters })
       .then((res) => {
@@ -89,7 +100,33 @@ export default function CatalogueBrowse() {
         if (err instanceof Error && /auth|token|login/i.test(err.message)) logout();
       })
       .finally(() => setLoading(false));
-  }, [token, page, q, fieldFilters]);
+  }, [token, page, q, fieldFilters, smartMode]);
+
+  useEffect(() => {
+    if (!token || !smartMode) return;
+    if (!smartText.trim() && !smartFile) return;
+    setLoading(true);
+    void apiCatalogViewSmartSearch(token, {
+      q: smartText,
+      page,
+      fieldFilters,
+      image: smartFile,
+    })
+      .then((res) => {
+        setItems(res.data);
+        setPageCount(res.page_count);
+        setTotal(res.total);
+      })
+      .catch((err: unknown) => {
+        toast({
+          title: "Smart search failed",
+          description: err instanceof Error ? err.message : "Could not run smart search",
+          variant: "destructive",
+        });
+        if (err instanceof Error && /auth|token|login/i.test(err.message)) logout();
+      })
+      .finally(() => setLoading(false));
+  }, [token, smartMode, page, fieldFilters, smartNonce]);
 
   useEffect(() => {
     if (!token || !items.length) return;
@@ -98,7 +135,8 @@ export default function CatalogueBrowse() {
       const next: Record<string, string> = {};
       await Promise.all(
         items.map(async (item) => {
-          const key = item.images?.[0]?.image_s3_key;
+          const keys = (item.images ?? []).map((img) => img.image_s3_key).filter(Boolean);
+          const key = keys.find((k) => !isVideoS3Key(k)) ?? keys[0];
           if (!key) return;
           try {
             next[item.uid] = await apiCatalogViewPresignedUrl(token, key);
@@ -113,6 +151,55 @@ export default function CatalogueBrowse() {
       cancelled = true;
     };
   }, [token, items]);
+
+  useEffect(() => {
+    return () => {
+      if (smartPreview) URL.revokeObjectURL(smartPreview);
+    };
+  }, [smartPreview]);
+
+  const runSmartSearch = () => {
+    if (!smartText.trim() && !smartFile) {
+      toast({
+        title: "Add a description or photo",
+        description: "Smart search needs text and/or a reference image.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setPage(1);
+    setSmartMode(true);
+    setSmartNonce((n) => n + 1);
+  };
+
+  const clearSmartSearch = () => {
+    setSmartMode(false);
+    setSmartText("");
+    setSmartFile(null);
+    if (smartPreview) URL.revokeObjectURL(smartPreview);
+    setSmartPreview("");
+    setPage(1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const onPickSmartImage = (file: File | null) => {
+    if (smartPreview) URL.revokeObjectURL(smartPreview);
+    if (!file) {
+      setSmartFile(null);
+      setSmartPreview("");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file",
+        description: "Please upload an image.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSmartFile(file);
+    setSmartPreview(URL.createObjectURL(file));
+  };
 
   if (!isAuthenticated || !token) return <Navigate to="/catalogue/login" replace />;
 
@@ -191,7 +278,6 @@ export default function CatalogueBrowse() {
       </header>
 
       <main className="relative z-10 mx-auto max-w-7xl space-y-10 px-4 py-10 sm:px-8 sm:py-14">
-        {/* Hero */}
         <section className="relative text-center">
           <div
             className="pointer-events-none absolute left-1/2 top-0 h-40 w-[min(90%,36rem)] -translate-x-1/2 rounded-full blur-3xl"
@@ -241,7 +327,136 @@ export default function CatalogueBrowse() {
           </div>
         </section>
 
-        {/* Filters */}
+        <CatalogueGlassPanel style={style} className="p-4 sm:p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: style.accent, boxShadow: `0 0 12px ${style.accentGlow}` }}
+              />
+              <p className="text-[10px] uppercase tracking-[0.28em]" style={{ color: style.muted }}>
+                Smart search
+              </p>
+              {smartMode ? (
+                <span
+                  className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.18em]"
+                  style={{
+                    color: style.background,
+                    background: style.buttonGradient,
+                  }}
+                >
+                  Active
+                </span>
+              ) : null}
+            </div>
+            {smartMode ? (
+              <button
+                type="button"
+                onClick={clearSmartSearch}
+                className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] transition hover:opacity-80"
+                style={{ color: style.muted }}
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+            ) : null}
+          </div>
+          <p className="mb-4 text-sm leading-relaxed" style={{ color: style.muted }}>
+            Describe a piece or upload a reference photo — we match the closest items in the catalogue.
+          </p>
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto_auto] lg:items-end">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-[0.22em]" style={{ color: style.muted }}>
+                Describe what you want
+              </label>
+              <div
+                className="relative flex items-center overflow-hidden rounded-full"
+                style={{
+                  background: style.surfaceGradient,
+                  border: `1px solid ${style.border}`,
+                }}
+              >
+                <Sparkles
+                  className="pointer-events-none absolute left-3.5 h-3.5 w-3.5"
+                  style={{ color: style.accent }}
+                />
+                <Input
+                  value={smartText}
+                  onChange={(e) => setSmartText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      runSmartSearch();
+                    }
+                  }}
+                  placeholder="e.g. gold jhumka with pearls…"
+                  className="border-0 bg-transparent pl-10 shadow-none focus-visible:ring-0"
+                  style={{ color: style.text }}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-[0.22em]" style={{ color: style.muted }}>
+                Reference photo
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => onPickSmartImage(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 rounded-full px-4 py-2.5 text-[10px] uppercase tracking-[0.2em] transition hover:opacity-90"
+                  style={{
+                    color: style.text,
+                    background: style.surfaceGradient,
+                    border: `1px solid ${style.border}`,
+                  }}
+                >
+                  <ImagePlus className="h-3.5 w-3.5" style={{ color: style.accent }} />
+                  {smartFile ? "Change" : "Upload"}
+                </button>
+                {smartPreview ? (
+                  <div
+                    className="relative h-11 w-11 overflow-hidden rounded-full"
+                    style={{ border: `1px solid ${style.border}` }}
+                  >
+                    <img src={smartPreview} alt="" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      aria-label="Remove photo"
+                      onClick={() => {
+                        onPickSmartImage(null);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                      className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full"
+                      style={{ background: style.buttonGradient, color: style.background }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={runSmartSearch}
+              disabled={loading}
+              className="rounded-full px-6 py-2.5 text-[10px] uppercase tracking-[0.22em] disabled:opacity-50"
+              style={{
+                color: style.background,
+                background: style.buttonGradient,
+                boxShadow: `0 0 24px ${style.accentSoft}`,
+              }}
+            >
+              Find matches
+            </button>
+          </div>
+        </CatalogueGlassPanel>
+
         <CatalogueGlassPanel style={style} className="p-4 sm:p-5">
           <div className="mb-4 flex items-center gap-2">
             <span
@@ -262,6 +477,7 @@ export default function CatalogueBrowse() {
                 style={{
                   background: style.surfaceGradient,
                   border: `1px solid ${style.border}`,
+                  opacity: smartMode ? 0.45 : 1,
                 }}
               >
                 <Search
@@ -270,6 +486,7 @@ export default function CatalogueBrowse() {
                 />
                 <Input
                   value={q}
+                  disabled={smartMode}
                   onChange={(e) => {
                     setPage(1);
                     setQ(e.target.value);
@@ -365,14 +582,16 @@ export default function CatalogueBrowse() {
               <Loader2 className="h-7 w-7 animate-spin" style={{ color: style.accent }} />
             </div>
             <p className="text-xs uppercase tracking-[0.28em]" style={{ color: style.muted }}>
-              Opening the vault
+              {smartMode ? "Finding closest matches" : "Opening the vault"}
             </p>
           </div>
         ) : items.length === 0 ? (
           <CatalogueGlassPanel style={style} className="px-6 py-20 text-center">
             <Sparkles className="mx-auto mb-3 h-6 w-6" style={{ color: style.accent }} />
             <p className="text-sm tracking-wide" style={{ color: style.muted }}>
-              No pieces match your filters.
+              {smartMode
+                ? "No close matches yet — try a different description or photo."
+                : "No pieces match your filters."}
             </p>
           </CatalogueGlassPanel>
         ) : (
@@ -389,29 +608,18 @@ export default function CatalogueBrowse() {
               >
                 <CatalogueGradientFrame
                   style={style}
-                  className="transition duration-500 group-hover:-translate-y-1.5 group-hover:shadow-[0_28px_60px_rgba(0,0,0,0.35)]"
+                  className="transition duration-500 group-hover:-translate-y-1 group-hover:shadow-[0_22px_48px_rgba(0,0,0,0.28)]"
                 >
-                  <div className="relative w-full" style={{ aspectRatio: "2 / 3" }}>
-                    {/* Soft vignette behind product */}
-                    <div
-                      className="pointer-events-none absolute inset-0"
-                      style={{
-                        background: `radial-gradient(ellipse 70% 55% at 50% 55%, ${style.accentSoft} 0%, transparent 70%)`,
-                      }}
+                  <div className="relative w-full overflow-hidden" style={{ aspectRatio: "2 / 3" }}>
+                    <BuyerCatalogueCardMedia
+                      item={item}
+                      token={token}
+                      primaryUrl={imageUrls[item.uid]}
                     />
-                    {imageUrls[item.uid] ? (
-                      <img
-                        src={imageUrls[item.uid]}
-                        alt={item.name}
-                        className="relative z-[1] h-full w-full object-contain p-2 transition duration-700 ease-out group-hover:scale-[1.04]"
-                      />
-                    ) : (
-                      <div className="h-full w-full animate-pulse" style={{ background: style.border }} />
-                    )}
                     <div
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-16 opacity-0 transition group-hover:opacity-100"
+                      className="pointer-events-none absolute inset-0 z-[2] opacity-0 transition duration-500 group-hover:opacity-100"
                       style={{
-                        background: `linear-gradient(transparent, ${style.accentSoft})`,
+                        background: `linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)`,
                       }}
                     />
                   </div>

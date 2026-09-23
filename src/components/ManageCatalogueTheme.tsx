@@ -19,6 +19,7 @@ import {
   type CatalogueTemplateId,
 } from "@/lib/catalogueTemplates";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,6 +115,7 @@ export default function ManageCatalogueTheme() {
         card_size: "md",
         page_title: theme.page_title,
         subtitle: theme.subtitle,
+        apply_theme_to_exports: Boolean(theme.apply_theme_to_exports),
       });
       setTheme({ ...updated, template_id: normalizeTemplateId(updated.template_id) });
       toast({ title: "Theme saved" });
@@ -271,6 +273,22 @@ export default function ManageCatalogueTheme() {
               placeholder="A short line under the title"
             />
           </div>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-4">
+            <Checkbox
+              checked={Boolean(theme.apply_theme_to_exports)}
+              onCheckedChange={(checked) =>
+                setTheme({ ...theme, apply_theme_to_exports: checked === true })
+              }
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium leading-none">Apply theme to PDF & PPT exports</p>
+              <p className="text-xs text-muted-foreground">
+                When off, exports keep a white background and default black text. The cover page still uses your page title.
+              </p>
+            </div>
+          </label>
 
           <div className="space-y-3 rounded-xl border p-4">
             <div className="flex items-center justify-between gap-2">

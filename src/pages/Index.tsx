@@ -28,6 +28,8 @@ import ManageCatalogue from "@/components/ManageCatalogue";
 import ManageCatalogueFields from "@/components/ManageCatalogueFields";
 import ManageCatalogueTheme from "@/components/ManageCatalogueTheme";
 import ManageCatalogViewers from "@/components/ManageCatalogViewers";
+import VideoShoot from "@/components/VideoShoot";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 
 function PremiumModelPauseBanner({ onViewQueue }: { onViewQueue: () => void }) {
   const queue = useGenerationQueueOptional();
@@ -64,6 +66,7 @@ export default function Index() {
   } | null>(null);
   const [editImage, setEditImage] = useState<{ s3Key: string; imageUrl: string } | null>(null);
   const [tryOnJewellery, setTryOnJewellery] = useState<{ s3Key: string; imageUrl?: string } | null>(null);
+  const [videoShootSource, setVideoShootSource] = useState<VideoCampaignSource | null>(null);
 
   const handleManualPhotoEdit = (
     s3Key: string,
@@ -82,6 +85,11 @@ export default function Index() {
   const handleOpenTryOnWithJewellery = (s3Key: string, imageUrl: string) => {
     setTryOnJewellery({ s3Key, imageUrl });
     setActiveTab("tryon");
+  };
+
+  const handleOpenVideoShoot = (source: VideoCampaignSource) => {
+    setVideoShootSource(source);
+    setActiveTab("videoShoot");
   };
 
   return (
@@ -110,7 +118,16 @@ export default function Index() {
                 imageUrl={tryOnJewellery?.imageUrl}
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onOpenVideoShoot={handleOpenVideoShoot}
                 onQueued={() => setTryOnJewellery(null)}
+                onViewQueue={() => setActiveTab("generationQueue")}
+              />
+            )}
+
+            {activeTab === "videoShoot" && (
+              <VideoShoot
+                initialSource={videoShootSource}
+                onQueued={() => setVideoShootSource(null)}
                 onViewQueue={() => setActiveTab("generationQueue")}
               />
             )}
@@ -151,6 +168,7 @@ export default function Index() {
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
                 onOpenTryOnWithJewellery={handleOpenTryOnWithJewellery}
+                onOpenVideoShoot={handleOpenVideoShoot}
               />
             )}
             {activeTab === "uploadStudioShoot" && (
@@ -182,7 +200,9 @@ export default function Index() {
               <ManageModelPoses onViewQueue={() => setActiveTab("generationQueue")} />
             )}
             {activeTab === "backgrounds" && <ManageBackgrounds />}
-            {activeTab === "catalogue" && <ManageCatalogue />}
+            {activeTab === "catalogue" && (
+              <ManageCatalogue onOpenVideoShoot={handleOpenVideoShoot} />
+            )}
             {activeTab === "catalogueFields" && <ManageCatalogueFields />}
             {activeTab === "catalogueTheme" && <ManageCatalogueTheme />}
             {activeTab === "catalogViewerManagement" && <ManageCatalogViewers />}

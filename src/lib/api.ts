@@ -78,7 +78,8 @@ export type GenerationJobType =
   | "product_shoot"
   | "product_shoot_edit"
   | "model_pose"
-  | "image_edit";
+  | "image_edit"
+  | "video_shoot";
 
 export type GenerationJobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -168,9 +169,13 @@ export async function apiDispatchGenerationJobs(token: string, signal?: AbortSig
 
 export function generationJobResultS3Key(job: GenerationJob): string | null {
   const result = job.result;
-  if (!result) return null;
-  const key = result.s3_key ?? result.image_s3_key;
-  return typeof key === "string" && key ? key : null;
+  if (!result || typeof result !== "object") return null;
+  const data = result as Record<string, unknown>;
+  for (const key of ["video_s3_key", "s3_key", "image_s3_key", "front_image_s3_key"]) {
+    const value = data[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 export function generationJobDraftUid(job: GenerationJob): string | null {
@@ -747,6 +752,9 @@ export type ModelShootDraft = {
   can_resume_review?: boolean;
   analysis?: TryOnAnalysis | null;
   gallery_uid?: string | null;
+  product_uid?: string | null;
+  product_sku?: string | null;
+  product_name?: string | null;
   views?: ModelShootViews;
   front_edits_used?: number;
   front_edits_remaining?: number;
@@ -898,6 +906,9 @@ export type ProductShootDraft = {
   can_resume_review?: boolean;
   analysis?: Record<string, unknown> | null;
   gallery_uid?: string | null;
+  product_uid?: string | null;
+  product_sku?: string | null;
+  product_name?: string | null;
   views: "front" | "side" | "both";
   front_edits_used?: number;
   front_edits_remaining?: number;
@@ -1070,6 +1081,9 @@ export type Measurement = {
   unit: DimensionUnit;
 };
 
+export type BackgroundMode = "white" | "brand_kit" | "custom";
+export type CustomBackgroundInput = "description" | "upload" | "preset";
+
 export type ApiGenerateTryOnOptions = {
   /** Caller-owned flatlay key: skips upload and is not deleted after generation. */
   existingJewelleryS3Key?: string;
@@ -1077,8 +1091,12 @@ export type ApiGenerateTryOnOptions = {
   outputQuality?: TryOnOutputQuality;
   /** Apply a specific brand kit's aesthetic. Omit to use the active kit (if any). */
   brandKitUid?: string;
-  /** Optional S3 key of a background/scene to place the model in. */
+  /** How to choose the shoot background: white | brand_kit | custom. */
+  backgroundMode?: BackgroundMode;
+  /** Optional S3 key of a background/scene to place the model in (custom mode). */
   backgroundS3Key?: string | null;
+  /** Optional free-text background description (custom mode). */
+  backgroundText?: string | null;
   /** Optional exact measurements so the piece renders at true real-world size. */
   dimensions?: Measurement[] | null;
   /** When true, `modelPoseS3Key` is sent as `model_s3_key` instead of the base model image. */
@@ -1176,8 +1194,12 @@ export async function apiGenerateTryOn(
   });
   const brandKitUid = options?.brandKitUid?.trim();
   if (brandKitUid) params.set("brand_kit_uid", brandKitUid);
+  const backgroundMode = options?.backgroundMode;
+  if (backgroundMode) params.set("background_mode", backgroundMode);
   const backgroundS3Key = options?.backgroundS3Key?.trim();
   if (backgroundS3Key) params.set("background_s3_key", backgroundS3Key);
+  const backgroundText = options?.backgroundText?.trim();
+  if (backgroundText) params.set("background_text", backgroundText);
   const measurements = (options?.dimensions ?? []).filter(
     (m) => Number.isFinite(m.value) && m.value > 0
   );
@@ -1224,7 +1246,12 @@ export async function apiGetTryOnImages(token: string) {
   return res.json() as Promise<{ Key: string }[]>;
 }
 
-export type GalleryCategory = "model-shoot" | "product-shoot" | "edited-image";
+export type GalleryCategory =
+  | "model-shoot"
+  | "product-shoot"
+  | "edited-image"
+  | "product-video"
+  | "model-video";
 
 export type GalleryItem = {
   uid: string;
@@ -1234,6 +1261,7 @@ export type GalleryItem = {
   product_uid?: string | null;
   product_sku?: string | null;
   product_name?: string | null;
+  in_catalog?: boolean;
   created_at: string;
   edited_at: string;
   draft_uid?: string | null;
@@ -1252,6 +1280,8 @@ export type GalleryProduct = {
   product_shoot_count: number;
   model_shoot_count: number;
   edited_image_count: number;
+  product_video_count?: number;
+  model_video_count?: number;
   created_at: string;
   updated_at: string;
 };
@@ -1269,6 +1299,8 @@ export type GalleryProductDetailResponse = {
   product_shoots: GalleryItem[];
   model_shoots: GalleryItem[];
   edited_images: GalleryItem[];
+  product_videos?: GalleryItem[];
+  model_videos?: GalleryItem[];
 };
 
 export function galleryImageCaptions(
@@ -1511,8 +1543,11 @@ export type ApiCreateStudioShootOptions = {
   aspectRatio?: TryOnAspectRatio;
   outputQuality?: TryOnOutputQuality;
   brandKitUid?: string | null;
+  backgroundMode?: BackgroundMode;
   backgroundText?: string;
   backgroundFile?: File | null;
+  /** Preset background from Manage Backgrounds (custom mode). */
+  backgroundS3Key?: string | null;
   productAngleS3Key?: string | null;
   productSideAngleS3Key?: string | null;
   productId: string;
@@ -1542,6 +1577,9 @@ export async function apiCreateStudioShoot(
     } else if (brandKitUid?.trim()) {
       formData.append("brand_kit_uid", brandKitUid.trim());
     }
+    if (options.backgroundMode) {
+      formData.append("background_mode", options.backgroundMode);
+    }
     if (generateSide && sideFile) {
       formData.append("side_view_file", sideFile);
     }
@@ -1551,6 +1589,10 @@ export async function apiCreateStudioShoot(
     }
     if (options.backgroundFile) {
       formData.append("background_file", backgroundFile ?? options.backgroundFile);
+    }
+    const backgroundS3Key = options.backgroundS3Key?.trim();
+    if (backgroundS3Key) {
+      formData.append("background_s3_key", backgroundS3Key);
     }
     const productAngleS3Key = options.productAngleS3Key?.trim();
     if (views !== "side" && productAngleS3Key) {
@@ -1617,6 +1659,85 @@ export async function apiCreateStudioShoot(
   return parseGenerationJob(await res.json(), "Failed to queue studio shoot");
 }
 
+export type VideoCampaignMode = "product" | "on_model";
+export type VideoCampaignDuration = 8 | 15;
+export type VideoCampaignAspect = "16:9" | "9:16";
+
+export type ApiGenerateCampaignVideoOptions = {
+  sourceS3Key: string;
+  videoMode: VideoCampaignMode;
+  durationSeconds?: VideoCampaignDuration;
+  aspectRatio?: VideoCampaignAspect;
+  brandKitUid?: string | null;
+  backgroundMode?: BackgroundMode;
+  backgroundText?: string;
+  backgroundFile?: File | null;
+  backgroundS3Key?: string | null;
+  productId?: string | null;
+  galleryUid?: string | null;
+  catalogueItemUid?: string | null;
+  extraReferenceS3Keys?: string[];
+};
+
+export function isVideoS3Key(s3Key: string | null | undefined): boolean {
+  const key = (s3Key || "").toLowerCase();
+  return key.endsWith(".mp4") || key.endsWith(".mov") || key.endsWith(".webm");
+}
+
+export async function apiGenerateCampaignVideo(
+  token: string,
+  options: ApiGenerateCampaignVideoOptions,
+): Promise<GenerationJob> {
+  const formData = new FormData();
+  formData.append("source_s3_key", options.sourceS3Key.trim());
+  formData.append("video_mode", options.videoMode);
+  formData.append("duration_seconds", String(options.durationSeconds ?? 8));
+  formData.append("aspect_ratio", options.aspectRatio ?? "16:9");
+  if (options.backgroundMode) {
+    formData.append("background_mode", options.backgroundMode);
+  }
+  const brandKitUid = options.brandKitUid;
+  if (brandKitUid === null) {
+    formData.append("brand_kit_uid", "none");
+  } else if (brandKitUid?.trim()) {
+    formData.append("brand_kit_uid", brandKitUid.trim());
+  }
+  const backgroundText = options.backgroundText?.trim();
+  if (backgroundText) {
+    formData.append("background_text", backgroundText);
+  }
+  if (options.backgroundFile) {
+    formData.append("background_file", options.backgroundFile);
+  }
+  const backgroundS3Key = options.backgroundS3Key?.trim();
+  if (backgroundS3Key) {
+    formData.append("background_s3_key", backgroundS3Key);
+  }
+  const productId = options.productId?.trim();
+  if (productId) {
+    formData.append("product_id", productId);
+  }
+  const galleryUid = options.galleryUid?.trim();
+  if (galleryUid) {
+    formData.append("gallery_uid", galleryUid);
+  }
+  const catalogueItemUid = options.catalogueItemUid?.trim();
+  if (catalogueItemUid) {
+    formData.append("catalogue_item_uid", catalogueItemUid);
+  }
+  if (options.extraReferenceS3Keys?.length) {
+    formData.append("extra_reference_s3_keys", options.extraReferenceS3Keys.join(","));
+  }
+
+  const res = await fetch(`${API_BASE_URL}/generate-campaign-video`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Failed to queue campaign video");
+  return parseGenerationJob(await res.json(), "Failed to queue campaign video");
+}
+
 export type CreateModelPayload = {
   name: string;
   gender: string;
@@ -1668,6 +1789,25 @@ export async function apiUploadBackgroundImage(token: string, file: File) {
 
   await assertOk(res, "Upload failed");
   return res.json() as Promise<{ s3_key: string }>;
+}
+
+/** One-off image upload (not added to Manage Backgrounds). */
+export async function apiUploadTempImage(token: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", await asUploadableImage(file));
+
+  const res = await fetch(`${API_BASE_URL}/upload-temp-image`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  await assertOk(res, "Upload failed");
+  const data = (await res.json()) as { s3_key?: string };
+  if (!data.s3_key) {
+    throw new Error("Upload failed");
+  }
+  return data.s3_key;
 }
 
 export async function apiDeleteS3Object(token: string, s3Key: string) {
@@ -2229,6 +2369,7 @@ export type CatalogueTheme = {
   card_size: "sm" | "md" | "lg";
   page_title?: string | null;
   subtitle?: string | null;
+  apply_theme_to_exports?: boolean;
   updated_at: string;
 };
 
@@ -2425,6 +2566,18 @@ export async function apiCreateCatalogueItem(
   return res.json() as Promise<CatalogueItem>;
 }
 
+/** Look up a catalogue item by SKU / item code. Returns null when not found. */
+export async function apiGetCatalogueItemByCode(token: string, itemCode: string) {
+  const code = itemCode.trim();
+  if (!code) return null;
+  const res = await fetch(`${API_BASE_URL}/catalogue/by-item-code/${encodeURIComponent(code)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return null;
+  await assertOk(res, "Failed to look up catalogue item");
+  return res.json() as Promise<CatalogueItem>;
+}
+
 export async function apiUpdateCatalogueItem(
   token: string,
   uid: string,
@@ -2511,6 +2664,40 @@ export async function apiEditCatalogueImage(
   };
 }
 
+/** Trim a video on the server to [startSeconds, endSeconds] and return a new S3 key. */
+export async function apiTrimVideo(
+  token: string,
+  payload: { sourceS3Key: string; startSeconds: number; endSeconds: number },
+) {
+  const formData = new FormData();
+  formData.append("source_s3_key", payload.sourceS3Key);
+  formData.append("start_seconds", String(payload.startSeconds));
+  formData.append("end_seconds", String(payload.endSeconds));
+  const res = await fetch(`${API_BASE_URL}/trim-video`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  await assertOk(res, "Failed to trim video");
+  const data = (await res.json()) as {
+    video_s3_key?: string;
+    s3_key?: string;
+    preview_url?: string;
+    start_seconds?: number;
+    end_seconds?: number;
+    duration_seconds?: number;
+  };
+  const videoS3Key = data.video_s3_key || data.s3_key || "";
+  if (!videoS3Key) throw new Error("Trim succeeded but no video key returned");
+  return {
+    videoS3Key,
+    previewUrl: data.preview_url,
+    startSeconds: data.start_seconds,
+    endSeconds: data.end_seconds,
+    durationSeconds: data.duration_seconds,
+  };
+}
+
 export async function apiCreateCatalogViewer(token: string, username: string, password: string) {
   const params = new URLSearchParams({ username, password });
   const res = await fetch(`${API_BASE_URL}/catalog-viewer-manager?${params.toString()}`, {
@@ -2581,6 +2768,39 @@ export async function apiCatalogViewItems(viewerToken: string, filters?: Catalog
     headers: { Authorization: `Bearer ${viewerToken}` },
   });
   await assertOk(res, "Failed to fetch catalogue items");
+  return res.json() as Promise<CatalogueListResponse>;
+}
+
+export type CatalogueSmartSearchParams = {
+  q?: string;
+  page?: number;
+  fieldFilters?: Record<string, string>;
+  image?: File | Blob | null;
+};
+
+export async function apiCatalogViewSmartSearch(
+  viewerToken: string,
+  params: CatalogueSmartSearchParams,
+) {
+  const form = new FormData();
+  if (params.q?.trim()) form.set("q", params.q.trim());
+  form.set("page", String(params.page ?? 1));
+  if (params.fieldFilters && Object.keys(params.fieldFilters).length > 0) {
+    form.set("field_filters", JSON.stringify(params.fieldFilters));
+  }
+  if (params.image) {
+    const file =
+      params.image instanceof File
+        ? params.image
+        : new File([params.image], "query.jpg", { type: "image/jpeg" });
+    form.append("image", file);
+  }
+  const res = await fetch(`${API_BASE_URL}/catalogue-view/smart-search`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${viewerToken}` },
+    body: form,
+  });
+  await assertOk(res, "Smart search failed");
   return res.json() as Promise<CatalogueListResponse>;
 }
 

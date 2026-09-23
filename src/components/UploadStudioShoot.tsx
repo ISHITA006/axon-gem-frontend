@@ -4,12 +4,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
 import {
   apiCreateStudioShoot,
+  apiGetBackgroundImages,
   apiListProductAngles,
   apiListProductSideAngles,
   apiListProductBrandKits,
   getPresignedUrl,
   TRY_ON_ASPECT_RATIOS,
   TRY_ON_OUTPUT_QUALITIES,
+  type BackgroundMode,
+  type CustomBackgroundInput,
   type ProductAngleRecord,
   type ProductSideAngleRecord,
   type ProductBrandKitRecord,
@@ -77,11 +80,15 @@ export default function UploadStudioShoot({
   const NO_BRAND_KIT = "none";
   const [brandKits, setBrandKits] = useState<ProductBrandKitRecord[]>([]);
   const [selectedBrandKitUid, setSelectedBrandKitUid] = useState<string>(NO_BRAND_KIT);
-  const [useCustomBackground, setUseCustomBackground] = useState(false);
-  const [backgroundInputMode, setBackgroundInputMode] = useState<"description" | "image">("description");
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("white");
+  const [backgroundInputMode, setBackgroundInputMode] = useState<CustomBackgroundInput>("description");
   const [backgroundText, setBackgroundText] = useState("");
   const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
   const [backgroundPreviewUrl, setBackgroundPreviewUrl] = useState<string | null>(null);
+  const [backgroundKeys, setBackgroundKeys] = useState<string[]>([]);
+  const [backgroundUrls, setBackgroundUrls] = useState<Record<string, string>>({});
+  const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
+  const [backgroundsLoading, setBackgroundsLoading] = useState(false);
 
   const [productAngles, setProductAngles] = useState<ProductAngleRecord[]>([]);
   const [productAngleUrls, setProductAngleUrls] = useState<Record<string, string>>({});
@@ -117,6 +124,39 @@ export default function UploadStudioShoot({
         // Product brand kits are optional — silently ignore load failures.
       });
   }, [token]);
+
+  useEffect(() => {
+    if (!token || backgroundMode !== "custom" || backgroundInputMode !== "preset") {
+      return;
+    }
+    let cancelled = false;
+    setBackgroundsLoading(true);
+    apiGetBackgroundImages(token)
+      .then(async (data) => {
+        const keys = data.map((d) => d.Key);
+        if (cancelled) return;
+        setBackgroundKeys(keys);
+        const urlEntries = await Promise.all(
+          keys.map(async (key) => {
+            try {
+              return [key, await getPresignedUrl(token, key)] as [string, string];
+            } catch {
+              return [key, ""] as [string, string];
+            }
+          })
+        );
+        if (!cancelled) setBackgroundUrls(Object.fromEntries(urlEntries));
+      })
+      .catch(() => {
+        // Backgrounds are optional — silently ignore load failures.
+      })
+      .finally(() => {
+        if (!cancelled) setBackgroundsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, backgroundMode, backgroundInputMode]);
 
   useEffect(() => {
     if (!token || !wantProductAngle) {
@@ -204,27 +244,31 @@ export default function UploadStudioShoot({
     };
   }, [token, generateSide, wantProductSideAngle]);
 
-  const handleUseCustomBackgroundChange = (checked: boolean) => {
-    setUseCustomBackground(checked);
-    if (checked) {
+  const handleBackgroundModeChange = (mode: BackgroundMode) => {
+    setBackgroundMode(mode);
+    if (mode === "brand_kit") {
       const active = brandKits.find((kit) => kit.is_active);
       if (active && selectedBrandKitUid === NO_BRAND_KIT) {
         setSelectedBrandKitUid(active.uid);
       }
-      return;
     }
-    setBackgroundText("");
-    setBackgroundFile(null);
-    setBackgroundInputMode("description");
+    if (mode !== "custom") {
+      setBackgroundText("");
+      setBackgroundFile(null);
+      setSelectedBackground(null);
+      setBackgroundInputMode("description");
+      if (backgroundInputRef.current) backgroundInputRef.current.value = "";
+    }
   };
 
-  const handleBackgroundInputModeChange = (mode: "description" | "image") => {
+  const handleBackgroundInputModeChange = (mode: CustomBackgroundInput) => {
     setBackgroundInputMode(mode);
-    if (mode === "description") {
+    if (mode !== "description") setBackgroundText("");
+    if (mode !== "upload") {
       setBackgroundFile(null);
-    } else {
-      setBackgroundText("");
+      if (backgroundInputRef.current) backgroundInputRef.current.value = "";
     }
+    if (mode !== "preset") setSelectedBackground(null);
   };
 
   useEffect(() => {
@@ -325,9 +369,10 @@ export default function UploadStudioShoot({
     setSelectedProductAngleUid(null);
     setWantProductSideAngle(false);
     setSelectedProductSideAngleUid(null);
-    setUseCustomBackground(false);
+    setBackgroundMode("white");
     setBackgroundText("");
     setBackgroundFile(null);
+    setSelectedBackground(null);
     setBackgroundInputMode("description");
     setProductId("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -362,7 +407,16 @@ export default function UploadStudioShoot({
       return;
     }
 
-    if (useCustomBackground) {
+    if (backgroundMode === "brand_kit" && selectedBrandKitUid === NO_BRAND_KIT) {
+      toast({
+        title: "Brand kit required",
+        description: "Select a product brand kit to infer the background, or choose another option.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (backgroundMode === "custom") {
       if (backgroundInputMode === "description" && !backgroundText.trim()) {
         toast({
           title: "Background required",
@@ -371,10 +425,18 @@ export default function UploadStudioShoot({
         });
         return;
       }
-      if (backgroundInputMode === "image" && !backgroundFile) {
+      if (backgroundInputMode === "upload" && !backgroundFile) {
         toast({
           title: "Background required",
           description: "Upload a background reference image.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (backgroundInputMode === "preset" && !selectedBackground) {
+        toast({
+          title: "Background required",
+          description: "Select a preset background, or choose another option.",
           variant: "destructive",
         });
         return;
@@ -409,12 +471,17 @@ export default function UploadStudioShoot({
         aspectRatio,
         outputQuality,
         brandKitUid: selectedBrandKitUid,
+        backgroundMode,
         backgroundText:
-          useCustomBackground && backgroundInputMode === "description"
+          backgroundMode === "custom" && backgroundInputMode === "description"
             ? backgroundText.trim()
             : undefined,
         backgroundFile:
-          useCustomBackground && backgroundInputMode === "image" ? backgroundFile : null,
+          backgroundMode === "custom" && backgroundInputMode === "upload" ? backgroundFile : null,
+        backgroundS3Key:
+          backgroundMode === "custom" && backgroundInputMode === "preset"
+            ? selectedBackground
+            : null,
         productAngleS3Key: generateFront && wantProductAngle ? selectedProductAngleS3Key : null,
         productSideAngleS3Key:
           generateSide && wantProductSideAngle ? selectedProductSideAngleS3Key : null,
@@ -881,31 +948,63 @@ export default function UploadStudioShoot({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              {useCustomBackground
-                ? "Applies camera style and jewellery placement from your brand kit. Background comes from your custom input."
-                : "Applies your brand's camera style and jewellery placement to the result. Uses white studio background as default."}
+              {backgroundMode === "brand_kit"
+                ? "Uses your brand kit's full studio aesthetic, including its background."
+                : backgroundMode === "custom"
+                  ? "Applies camera style and jewellery placement from your brand kit. Background comes from your custom input."
+                  : "Applies camera style and jewellery placement from your brand kit on a white studio background."}
             </p>
           </div>
 
-          <div className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
-            <Checkbox
-              id="use-custom-background"
-              checked={useCustomBackground}
-              onCheckedChange={(checked) => handleUseCustomBackgroundChange(checked === true)}
-              className="mt-0.5"
-            />
+          <div className="space-y-3 rounded-lg border bg-muted/20 px-4 py-3">
             <div className="space-y-1">
-              <Label htmlFor="use-custom-background" className="cursor-pointer text-sm leading-snug">
-                Use custom background
-              </Label>
+              <p className="text-sm font-medium">Background</p>
               <p className="text-xs text-muted-foreground">
-                Choose either a description or a reference image for the backdrop. Brand kit
-                background styling is skipped; camera and placement still apply if a kit is selected.
+                Choose how the backdrop behind the jewellery is decided.
               </p>
             </div>
+            <RadioGroup
+              value={backgroundMode}
+              onValueChange={(value) => handleBackgroundModeChange(value as BackgroundMode)}
+              className="space-y-2"
+            >
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border bg-background/60 px-3 py-2">
+                <RadioGroupItem value="white" id="bg-white" className="mt-0.5" />
+                <div>
+                  <Label htmlFor="bg-white" className="cursor-pointer text-sm font-medium">
+                    White
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Clean seamless pure white studio cyclorama.
+                  </p>
+                </div>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border bg-background/60 px-3 py-2">
+                <RadioGroupItem value="brand_kit" id="bg-brand" className="mt-0.5" />
+                <div>
+                  <Label htmlFor="bg-brand" className="cursor-pointer text-sm font-medium">
+                    Infer from brand kit
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Match the background and surface treatment from the selected product brand kit.
+                  </p>
+                </div>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border bg-background/60 px-3 py-2">
+                <RadioGroupItem value="custom" id="bg-custom" className="mt-0.5" />
+                <div>
+                  <Label htmlFor="bg-custom" className="cursor-pointer text-sm font-medium">
+                    Choose your own
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Describe a backdrop, upload a reference, or pick a preset background.
+                  </p>
+                </div>
+              </label>
+            </RadioGroup>
           </div>
 
-          {useCustomBackground && (
+          {backgroundMode === "custom" && (
             <div className="space-y-4 rounded-lg border bg-muted/10 p-4">
               <div className="space-y-2">
                 <p className="text-sm font-medium">Background input</p>
@@ -918,17 +1017,27 @@ export default function UploadStudioShoot({
                       onChange={() => handleBackgroundInputModeChange("description")}
                       className="h-4 w-4"
                     />
-                    Describe background
+                    Describe
                   </label>
                   <label className="flex cursor-pointer items-center gap-2 text-sm">
                     <input
                       type="radio"
                       name="background-input-mode"
-                      checked={backgroundInputMode === "image"}
-                      onChange={() => handleBackgroundInputModeChange("image")}
+                      checked={backgroundInputMode === "upload"}
+                      onChange={() => handleBackgroundInputModeChange("upload")}
                       className="h-4 w-4"
                     />
-                    Upload reference image
+                    Upload image
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="background-input-mode"
+                      checked={backgroundInputMode === "preset"}
+                      onChange={() => handleBackgroundInputModeChange("preset")}
+                      className="h-4 w-4"
+                    />
+                    Preset backgrounds
                   </label>
                 </div>
               </div>
@@ -946,7 +1055,7 @@ export default function UploadStudioShoot({
                     rows={3}
                   />
                 </div>
-              ) : (
+              ) : backgroundInputMode === "upload" ? (
                 <div className="space-y-1.5">
                   <Label htmlFor="background-image-upload" className="text-sm font-medium">
                     Background reference image
@@ -978,6 +1087,55 @@ export default function UploadStudioShoot({
                     />
                   </label>
                 </div>
+              ) : (
+                <div className="space-y-2">
+                  {backgroundsLoading ? (
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <Skeleton key={i} className="aspect-[3/4] w-full rounded-lg" />
+                      ))}
+                    </div>
+                  ) : backgroundKeys.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No background images found. Add some under Manage Backgrounds.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                      {backgroundKeys.map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() =>
+                            setSelectedBackground((prev) => (prev === key ? null : key))
+                          }
+                          className={cn(
+                            "group relative aspect-[3/4] overflow-hidden rounded-lg border-2 transition",
+                            selectedBackground === key
+                              ? "border-primary ring-2 ring-primary/30"
+                              : "border-transparent hover:border-muted-foreground/30"
+                          )}
+                        >
+                          {backgroundUrls[key] ? (
+                            <img
+                              src={backgroundUrls[key]}
+                              alt="Background"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-muted">
+                              <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                          )}
+                          {selectedBackground === key && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+                              <Check className="h-8 w-8 text-primary-foreground drop-shadow-md" />
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -993,6 +1151,14 @@ export default function UploadStudioShoot({
             !views ||
             !imageFile ||
             shooting ||
+            (backgroundMode === "brand_kit" && selectedBrandKitUid === NO_BRAND_KIT) ||
+            (backgroundMode === "custom" &&
+              backgroundInputMode === "description" &&
+              !backgroundText.trim()) ||
+            (backgroundMode === "custom" && backgroundInputMode === "upload" && !backgroundFile) ||
+            (backgroundMode === "custom" &&
+              backgroundInputMode === "preset" &&
+              !selectedBackground) ||
             (generateFront && wantProductAngle && !selectedProductAngleS3Key) ||
             (generateSide && wantProductSideAngle && !selectedProductSideAngleS3Key)
           }

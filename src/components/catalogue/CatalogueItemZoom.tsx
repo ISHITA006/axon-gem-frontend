@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Maximize2, Volume2, VolumeX, X } from "lucide-react";
 import type { CatalogueFieldDefinition, CatalogueItem } from "@/lib/api";
-import { apiCatalogViewPresignedUrl } from "@/lib/api";
+import { apiCatalogViewPresignedUrl, isVideoS3Key } from "@/lib/api";
 import type { ResolvedCatalogueStyle } from "@/lib/catalogueTemplates";
 import {
   CatalogueGradientFrame,
@@ -16,21 +16,121 @@ type Props = {
   onClose: () => void;
 };
 
+function AutoPlayMedia({
+  url,
+  s3Key,
+  className,
+  onEnded,
+  alt,
+  loop,
+  muted,
+  onAutoMute,
+}: {
+  url: string;
+  s3Key: string | undefined;
+  className: string;
+  onEnded?: () => void;
+  alt: string;
+  loop?: boolean;
+  /** Modal/fullscreen play with sound; falls back to muted if browser blocks it. */
+  muted: boolean;
+  onAutoMute?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const onAutoMuteRef = useRef(onAutoMute);
+  const mutedRef = useRef(muted);
+  onAutoMuteRef.current = onAutoMute;
+  mutedRef.current = muted;
+
+  useEffect(() => {
+    if (!isVideoS3Key(s3Key)) return;
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = mutedRef.current;
+    el.currentTime = 0;
+    void el.play().catch(() => {
+      if (!el.muted) {
+        el.muted = true;
+        onAutoMuteRef.current?.();
+        void el.play().catch(() => undefined);
+      }
+    });
+  }, [url, s3Key]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !isVideoS3Key(s3Key)) return;
+    el.muted = muted;
+    if (el.paused) void el.play().catch(() => undefined);
+  }, [muted, s3Key]);
+
+  if (isVideoS3Key(s3Key)) {
+    return (
+      <video
+        ref={videoRef}
+        key={url}
+        src={url}
+        className={`${className} pointer-events-none`}
+        muted={muted}
+        playsInline
+        autoPlay
+        loop={loop}
+        preload="auto"
+        controls={false}
+        disablePictureInPicture
+        controlsList="nodownload noplaybackrate noremoteplayback"
+        onContextMenu={(e) => e.preventDefault()}
+        onEnded={loop ? undefined : onEnded}
+      />
+    );
+  }
+
+  return <img src={url} alt={alt} className={className} draggable={false} />;
+}
+
+function MuteToggle({
+  muted,
+  onToggle,
+  className = "",
+}: {
+  muted: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`flex h-9 w-9 items-center justify-center rounded-full text-white transition hover:scale-105 ${className}`}
+      style={{ background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.25)" }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      aria-label={muted ? "Unmute video" : "Mute video"}
+    >
+      {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+    </button>
+  );
+}
+
 export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props) {
   const [urls, setUrls] = useState<string[]>([]);
+  const [keys, setKeys] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  const [videoMuted, setVideoMuted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setActiveIndex(0);
     setFullscreen(false);
+    setVideoMuted(false);
+    const mediaKeys = (item.images ?? []).map((img) => img.image_s3_key);
+    setKeys(mediaKeys);
     void Promise.all(
-      (item.images ?? []).map((img) =>
-        apiCatalogViewPresignedUrl(token, img.image_s3_key).catch(() => ""),
-      ),
+      mediaKeys.map((key) => apiCatalogViewPresignedUrl(token, key).catch(() => "")),
     ).then((loaded) => {
-      if (!cancelled) setUrls(loaded.filter(Boolean));
+      if (!cancelled) setUrls(loaded);
     });
     return () => {
       cancelled = true;
@@ -44,9 +144,11 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
         else onClose();
       }
       if (e.key === "ArrowRight" && urls.length > 1) {
+        setVideoMuted(false);
         setActiveIndex((i) => (i + 1) % urls.length);
       }
       if (e.key === "ArrowLeft" && urls.length > 1) {
+        setVideoMuted(false);
         setActiveIndex((i) => (i - 1 + urls.length) % urls.length);
       }
     };
@@ -56,27 +158,36 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
 
   const visibleFields = fields.filter((f) => f.show_on_buyer);
   const activeUrl = urls[activeIndex];
+  const activeKey = keys[activeIndex];
+  const activeIsVideo = isVideoS3Key(activeKey);
+  const mediaCount = urls.filter(Boolean).length;
+
+  const goNext = () => {
+    setVideoMuted(false);
+    setActiveIndex((i) => (i + 1) % Math.max(urls.length, 1));
+  };
+  const goPrev = () => {
+    setVideoMuted(false);
+    setActiveIndex((i) => (i - 1 + urls.length) % Math.max(urls.length, 1));
+  };
+
+  const onVideoEnded = () => {
+    if (mediaCount > 1) goNext();
+  };
+
+  const toggleMute = () => setVideoMuted((m) => !m);
 
   return (
     <>
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
         style={{
-          background: style.isDark ? "rgba(0,0,0,0.72)" : "rgba(20,16,12,0.45)",
-          backdropFilter: "blur(16px)",
+          background: style.isDark ? "rgba(0,0,0,0.78)" : "rgba(20,16,12,0.55)",
         }}
         onClick={onClose}
         role="dialog"
         aria-modal="true"
       >
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: `radial-gradient(ellipse 50% 40% at 50% 40%, ${style.accentSoft}, transparent 70%)`,
-          }}
-          aria-hidden
-        />
-
         <div
           className="relative grid max-h-[92vh] w-full max-w-5xl overflow-hidden lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]"
           style={{
@@ -112,36 +223,53 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
           <div
             className="relative flex min-h-[40vh] flex-col items-center justify-center p-5 sm:p-8 lg:min-h-[72vh]"
             style={{
-              background: `radial-gradient(ellipse 70% 60% at 50% 45%, ${style.accentSoft}, transparent 65%), ${style.background}`,
+              background: style.background,
             }}
           >
             {activeUrl ? (
-              <button
-                type="button"
-                className="group relative w-full max-w-md outline-none"
-                onClick={() => setFullscreen(true)}
-                title="View fullscreen"
-              >
-                <CatalogueGradientFrame style={style}>
-                  <div className="relative w-full" style={{ aspectRatio: "2 / 3" }}>
-                    <img
-                      src={activeUrl}
-                      alt={item.name}
-                      className="h-full w-full object-contain p-2 transition duration-500 group-hover:scale-[1.02]"
+              <div className="group relative w-full max-w-md">
+                <CatalogueGradientFrame style={style} shine={false}>
+                  <div className="relative w-full overflow-hidden" style={{ aspectRatio: "2 / 3" }}>
+                    {fullscreen ? (
+                      <div className="absolute inset-0 bg-black/80" />
+                    ) : (
+                      <AutoPlayMedia
+                        url={activeUrl}
+                        s3Key={activeKey}
+                        alt={item.name}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        onEnded={onVideoEnded}
+                        loop={mediaCount <= 1}
+                        muted={videoMuted}
+                        onAutoMute={() => setVideoMuted(true)}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="absolute inset-0 z-[1] outline-none"
+                      onClick={() => setFullscreen(true)}
+                      title="View fullscreen"
+                      aria-label="View fullscreen"
                     />
-                    <span
-                      className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] opacity-0 transition group-hover:opacity-100"
-                      style={{
-                        background: style.buttonGradient,
-                        color: style.background,
-                        boxShadow: `0 8px 24px ${style.accentSoft}`,
-                      }}
-                    >
-                      <Maximize2 className="h-3 w-3" /> Fullscreen
-                    </span>
+                    {activeIsVideo && !fullscreen ? (
+                      <div className="absolute bottom-3 right-3 z-[2]">
+                        <MuteToggle muted={videoMuted} onToggle={toggleMute} />
+                      </div>
+                    ) : !activeIsVideo ? (
+                      <span
+                        className="pointer-events-none absolute bottom-4 left-1/2 z-[2] flex -translate-x-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] opacity-0 transition group-hover:opacity-100"
+                        style={{
+                          background: style.buttonGradient,
+                          color: style.background,
+                          boxShadow: `0 8px 24px ${style.accentSoft}`,
+                        }}
+                      >
+                        <Maximize2 className="h-3 w-3" /> Fullscreen
+                      </span>
+                    ) : null}
                   </div>
                 </CatalogueGradientFrame>
-              </button>
+              </div>
             ) : (
               <div
                 className="aspect-[2/3] w-full max-w-md animate-pulse"
@@ -149,7 +277,7 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
               />
             )}
 
-            {urls.length > 1 ? (
+            {mediaCount > 1 ? (
               <div className="mt-5 flex items-center gap-3">
                 <button
                   type="button"
@@ -158,7 +286,7 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
                     background: style.surfaceGradient,
                     border: `1px solid ${style.border}`,
                   }}
-                  onClick={() => setActiveIndex((i) => (i - 1 + urls.length) % urls.length)}
+                  onClick={goPrev}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -173,7 +301,10 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
                         background: i === activeIndex ? style.accent : style.border,
                         boxShadow: i === activeIndex ? `0 0 12px ${style.accentGlow}` : undefined,
                       }}
-                      onClick={() => setActiveIndex(i)}
+                      onClick={() => {
+                        setVideoMuted(false);
+                        setActiveIndex(i);
+                      }}
                     />
                   ))}
                 </div>
@@ -184,38 +315,10 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
                     background: style.surfaceGradient,
                     border: `1px solid ${style.border}`,
                   }}
-                  onClick={() => setActiveIndex((i) => (i + 1) % urls.length)}
+                  onClick={goNext}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
-              </div>
-            ) : null}
-
-            {urls.length > 1 ? (
-              <div className="mt-4 flex max-w-md gap-2 overflow-x-auto pb-1">
-                {urls.map((url, i) => (
-                  <button
-                    key={url}
-                    type="button"
-                    onClick={() => setActiveIndex(i)}
-                    className="h-14 w-[2.333rem] shrink-0 overflow-hidden p-[1px]"
-                    style={{
-                      aspectRatio: "2 / 3",
-                      borderRadius: style.cardRadius,
-                      background: i === activeIndex ? style.cardBorderGradient : style.border,
-                    }}
-                  >
-                    <div
-                      className="h-full w-full overflow-hidden"
-                      style={{
-                        borderRadius: `calc(${style.cardRadius} - 1px)`,
-                        background: style.surface,
-                      }}
-                    >
-                      <img src={url} alt="" className="h-full w-full object-contain" />
-                    </div>
-                  </button>
-                ))}
               </div>
             ) : null}
           </div>
@@ -271,55 +374,63 @@ export function CatalogueItemZoom({ item, fields, token, style, onClose }: Props
 
       {fullscreen && activeUrl ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center"
-          style={{
-            background: `radial-gradient(ellipse 60% 50% at 50% 50%, ${style.accentSoft}, #000 70%)`,
-          }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black"
           onClick={() => setFullscreen(false)}
           role="dialog"
           aria-modal="true"
         >
           <button
             type="button"
-            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full text-white backdrop-blur"
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full text-white"
             style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)" }}
             onClick={() => setFullscreen(false)}
             aria-label="Close fullscreen"
           >
             <X className="h-5 w-5" />
           </button>
-          {urls.length > 1 ? (
+          {mediaCount > 1 ? (
             <>
               <button
                 type="button"
-                className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-white backdrop-blur sm:left-6"
+                className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-white sm:left-6"
                 style={{ background: "rgba(255,255,255,0.12)" }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActiveIndex((i) => (i - 1 + urls.length) % urls.length);
+                  goPrev();
                 }}
               >
                 <ChevronLeft className="h-6 w-6" />
               </button>
               <button
                 type="button"
-                className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-white backdrop-blur sm:right-6"
+                className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-white sm:right-6"
                 style={{ background: "rgba(255,255,255,0.12)" }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActiveIndex((i) => (i + 1) % urls.length);
+                  goNext();
                 }}
               >
                 <ChevronRight className="h-6 w-6" />
               </button>
             </>
           ) : null}
-          <img
-            src={activeUrl}
-            alt={item.name}
-            className="max-h-[96vh] max-w-[96vw] object-contain drop-shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="relative flex max-h-[96vh] max-w-[96vw] items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <AutoPlayMedia
+              url={activeUrl}
+              s3Key={activeKey}
+              alt={item.name}
+              className="max-h-[96vh] max-w-[96vw] object-contain"
+              onEnded={onVideoEnded}
+              loop={mediaCount <= 1}
+              muted={videoMuted}
+              onAutoMute={() => setVideoMuted(true)}
+            />
+            {activeIsVideo ? (
+              <div className="absolute bottom-4 right-4 z-10 sm:bottom-6 sm:right-6">
+                <MuteToggle muted={videoMuted} onToggle={toggleMute} />
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </>

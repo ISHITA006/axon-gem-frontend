@@ -1,7 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { getPresignedUrl } from "@/lib/api";
+import { getPresignedUrl, isVideoS3Key } from "@/lib/api";
 
 export function ImageKeyThumb({
   token,
@@ -34,6 +34,17 @@ export function ImageKeyThumb({
         <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-destructive">
           Failed
         </div>
+      ) : isVideoS3Key(s3Key) ? (
+        <video
+          src={urlQuery.data}
+          muted
+          playsInline
+          preload="metadata"
+          className={cn(
+            "h-full w-full object-cover transition-transform duration-200",
+            clickable ? "group-hover:scale-[1.06] group-hover:-translate-y-0.5" : undefined,
+          )}
+        />
       ) : (
         <img
           src={urlQuery.data}

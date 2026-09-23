@@ -140,10 +140,10 @@ export const CATALOGUE_TEMPLATES: CatalogueTemplate[] = [
 export const ACTIVE_TEMPLATE_IDS = CATALOGUE_TEMPLATES.map((t) => t.id);
 
 export function normalizeTemplateId(id?: string | null): CatalogueTemplateId {
-  if (!id) return "vault_emerald";
+  if (!id) return "porcelain_luxe";
   if (LEGACY_MAP[id]) return LEGACY_MAP[id];
   if (CATALOGUE_TEMPLATES.some((t) => t.id === id)) return id as CatalogueTemplateId;
-  return "vault_emerald";
+  return "porcelain_luxe";
 }
 
 export function getCatalogueTemplate(id?: string | null): CatalogueTemplate {
@@ -216,7 +216,9 @@ export function resolveCatalogueStyle(theme?: CatalogueTheme | null): ResolvedCa
   const muted = mixHex(text, background, 0.45);
   const border = rgbaFromHex(accent, 0.28);
   const dark = isDark(background);
-  const glow = base.glowRgb;
+  // Glow must follow the active accent (saved colour or preset), not a hard-coded preset RGB.
+  const accentRgb = hexToRgb(accent);
+  const glow = accentRgb ? accentRgb.join(", ") : base.glowRgb;
   const accentMid = mixHex(accent, background, 0.35);
 
   return {
@@ -252,7 +254,7 @@ export function ensureCatalogueFonts(template: CatalogueTemplate | ResolvedCatal
   const id = `catalogue-font-${"id" in template ? template.id : "resolved"}`;
   if (typeof document === "undefined") return;
   if (document.getElementById(id)) return;
-  const base = getCatalogueTemplate("id" in template ? template.id : "vault_emerald");
+  const base = getCatalogueTemplate("id" in template ? template.id : "porcelain_luxe");
   const link = document.createElement("link");
   link.id = id;
   link.rel = "stylesheet";

@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, type ColumnDef, type PaginationState, useReactTable } from "@tanstack/react-table";
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, Tag, Trash2, Video } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   apiAssignGalleryItemProduct,
@@ -14,10 +14,12 @@ import {
   downloadMedia,
   getPresignedUrl,
   galleryImageCaptions,
+  isVideoS3Key,
   type GalleryCategory,
   type GalleryItem,
   type GalleryProduct,
   type GalleryProductDetailResponse,
+  type VideoCampaignMode,
 } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -47,6 +49,7 @@ import { formatTableDate } from "@/lib/utils";
 import { GalleryItemDetail } from "@/components/GalleryItemDetail";
 import ModelShootReviewSession from "@/components/ModelShootReviewSession";
 import ProductShootReviewSession from "@/components/ProductShootReviewSession";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 const ITEMS_PER_PAGE = 5;
@@ -56,18 +59,37 @@ const GALLERY_VIEWS: { id: GalleryView; label: string }[] = [
   { id: "products", label: "All products" },
   { id: "recent", label: "All generations" },
 ];
-const ASSIGNABLE_CATEGORIES = new Set(["model-shoot", "product-shoot", "edited-image"]);
+const ASSIGNABLE_CATEGORIES = new Set([
+  "model-shoot",
+  "product-shoot",
+  "edited-image",
+  "product-video",
+  "model-video",
+]);
 const GALLERY_CATEGORY_LABELS: Record<GalleryCategory, string> = {
   "model-shoot": "Model Shoot",
   "product-shoot": "Product Shoot",
   "edited-image": "Edited Images",
+  "product-video": "Product Video",
+  "model-video": "Model Video",
 };
+
+function defaultVideoModeForCategory(category: string): VideoCampaignMode {
+  if (category === "model-shoot" || category === "model-video") return "on_model";
+  return "product";
+}
+
+function allowVideoModeChange(category: string): boolean {
+  return category !== "model-shoot" && category !== "product-shoot" && category !== "model-video" && category !== "product-video";
+}
 
 interface MyGalleryProps {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   /** Opens Model Try On with this image as the jewellery piece (presigned URL resolved here). */
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
+  /** Opens Video Shoot tab with this still preselected. */
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
 }
 
 function GalleryImageCell({
@@ -135,6 +157,14 @@ function GalleryImageCell({
             <div className="flex h-full w-full items-center justify-center px-0.5 text-center text-[10px] leading-tight text-destructive">
               Error
             </div>
+          ) : isVideoS3Key(currentKey) ? (
+            <video
+              src={urlQuery.data}
+              muted
+              playsInline
+              preload="metadata"
+              className="h-full w-full object-cover"
+            />
           ) : (
             <img
               src={urlQuery.data}
@@ -207,6 +237,7 @@ export default function MyGallery({
   onEditImage,
   onManualPhotoEdit,
   onOpenTryOnWithJewellery,
+  onOpenVideoShoot,
 }: MyGalleryProps) {
   const { token } = useAuth();
   const { toast } = useToast();
@@ -411,6 +442,29 @@ export default function MyGallery({
     [token, onOpenTryOnWithJewellery, toast]
   );
 
+  const openCampaignVideo = useCallback(
+    (item: GalleryItem, s3Key: string) => {
+      if (isVideoS3Key(s3Key)) {
+        toast({
+          title: "Pick a still image",
+          description: "Campaign video is generated from a product or model shoot still.",
+        });
+        return;
+      }
+      if (!onOpenVideoShoot) return;
+      const extras = (item.image_s3_keys ?? []).filter((k) => k && k !== s3Key && !isVideoS3Key(k)).slice(0, 2);
+      onOpenVideoShoot({
+        s3Key,
+        galleryUid: item.uid,
+        productId: item.product_sku,
+        defaultMode: defaultVideoModeForCategory(String(item.category)),
+        allowModeChange: allowVideoModeChange(String(item.category)),
+        extraReferenceS3Keys: extras,
+      });
+    },
+    [toast, onOpenVideoShoot],
+  );
+
   const columns = useMemo<ColumnDef<GalleryItem>[]>(
     () => [
       {
@@ -442,6 +496,11 @@ export default function MyGallery({
                   {item.generations_remaining === 1
                     ? "1 edit left"
                     : `${item.generations_remaining ?? 2} edits left`}
+                </Badge>
+              ) : null}
+              {item.in_catalog ? (
+                <Badge variant="outline" className="w-fit border-primary/40 text-primary">
+                  In catalogue
                 </Badge>
               ) : null}
             </div>
@@ -484,7 +543,8 @@ export default function MyGallery({
           const editing = Boolean(selectedKey && actionKey === `edit:${selectedKey}`);
           const openingTryOn = Boolean(selectedKey && actionKey === `tryon:${selectedKey}`);
           const disabled = downloading || editing || openingTryOn || galleryDeleting || assigning;
-          const showTryOn = Boolean(onOpenTryOnWithJewellery && selectedKey);
+          const showTryOn = Boolean(onOpenTryOnWithJewellery && selectedKey && !isVideoS3Key(selectedKey));
+          const showVideo = Boolean(selectedKey && !isVideoS3Key(selectedKey));
           const canAssign = ASSIGNABLE_CATEGORIES.has(String(row.original.category));
           const rowAssigning = assigning && assignTarget?.uid === uid;
           return (
@@ -503,18 +563,20 @@ export default function MyGallery({
                   >
                     {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={disabled}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleEdit(selectedKey);
-                    }}
-                  >
-                    {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-                  </Button>
+                  {!isVideoS3Key(selectedKey) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={disabled}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleEdit(selectedKey);
+                      }}
+                    >
+                      {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                    </Button>
+                  ) : null}
                   {showTryOn ? (
                     <Button
                       type="button"
@@ -532,6 +594,23 @@ export default function MyGallery({
                       ) : (
                         <Gem className="h-4 w-4" />
                       )}
+                    </Button>
+                  ) : null}
+                  {showVideo ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      title="Generate video"
+                      disabled={disabled || !token}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCampaignVideo(row.original, selectedKey);
+                      }}
+                    >
+                      <Video className="h-4 w-4" />
+                      <span className="hidden sm:inline">Video</span>
                     </Button>
                   ) : null}
                 </>
@@ -581,6 +660,7 @@ export default function MyGallery({
       token,
       onOpenTryOnWithJewellery,
       openTryOnWithJewelleryFromKey,
+      openCampaignVideo,
     ]
   );
 
@@ -648,6 +728,7 @@ export default function MyGallery({
         backLabel="Back to gallery"
         onEditImage={onEditImage}
         onManualPhotoEdit={onManualPhotoEdit}
+        onOpenVideoShoot={onOpenVideoShoot}
       />
     );
   }
@@ -662,6 +743,7 @@ export default function MyGallery({
         onEditImage={onEditImage}
         onManualPhotoEdit={onManualPhotoEdit}
         onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
+        onGenerateCampaignVideo={(s3Key) => openCampaignVideo(selectedItem, s3Key)}
         onItemUpdated={setSelectedItem}
       />
     );
@@ -893,6 +975,16 @@ export default function MyGallery({
                           "edited",
                           "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                         )}
+                        {countBadge(
+                          product.product_video_count ?? 0,
+                          "p-video",
+                          "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                        )}
+                        {countBadge(
+                          product.model_video_count ?? 0,
+                          "m-video",
+                          "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                        )}
                       </div>
                     </div>
                   </button>
@@ -1046,6 +1138,8 @@ function ProductDetailPanel({
     { title: "Product shoots", items: query.data?.product_shoots ?? [] },
     { title: "Model shoots", items: query.data?.model_shoots ?? [] },
     { title: "Edited images", items: query.data?.edited_images ?? [] },
+    { title: "Product videos", items: query.data?.product_videos ?? [] },
+    { title: "Model videos", items: query.data?.model_videos ?? [] },
   ];
   const hasAnyItems = sections.some((section) => section.items.length > 0);
   return (
@@ -1087,6 +1181,16 @@ function ProductDetailPanel({
                   "edited",
                   "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                 )}
+                {countBadge(
+                  product.product_video_count ?? 0,
+                  "product video",
+                  "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                )}
+                {countBadge(
+                  product.model_video_count ?? 0,
+                  "model video",
+                  "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                )}
               </div>
               <Button
                 type="button"
@@ -1127,13 +1231,20 @@ function ProductDetailPanel({
                         <p className="text-xs text-muted-foreground">
                           Edited {formatTableDate(item.edited_at)}
                         </p>
-                        {item.can_resume_review ? (
-                          <Badge variant="secondary" className="mt-1 w-fit">
-                            {item.generations_remaining === 1
-                              ? "1 edit left"
-                              : `${item.generations_remaining ?? 2} edits left`}
-                          </Badge>
-                        ) : null}
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {item.can_resume_review ? (
+                            <Badge variant="secondary" className="w-fit">
+                              {item.generations_remaining === 1
+                                ? "1 edit left"
+                                : `${item.generations_remaining ?? 2} edits left`}
+                            </Badge>
+                          ) : null}
+                          {item.in_catalog ? (
+                            <Badge variant="outline" className="w-fit border-primary/40 text-primary">
+                              In catalogue
+                            </Badge>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
                         <Button

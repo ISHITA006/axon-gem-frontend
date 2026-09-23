@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Gem, Loader2, Pencil, SlidersHorizontal, Video } from "lucide-react";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { downloadMedia, getPresignedUrl } from "@/lib/api";
+import { downloadMedia, getPresignedUrl, isVideoS3Key } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type ImageCarouselProps = {
@@ -20,6 +20,7 @@ type ImageCarouselProps = {
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onOpenTryOnWithJewellery?: (s3Key: string, imageUrl: string) => void;
+  onGenerateCampaignVideo?: (s3Key: string, imageUrl: string) => void;
 };
 
 export function ImageCarouselStage({
@@ -33,6 +34,7 @@ export function ImageCarouselStage({
   onManualPhotoEdit,
   onEditImage,
   onOpenTryOnWithJewellery,
+  onGenerateCampaignVideo,
 }: ImageCarouselProps) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -109,12 +111,14 @@ export function ImageCarouselStage({
             size="sm"
             onClick={() => void handleDownload()}
             className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
-            title="Download image"
+            title={isVideoS3Key(currentKey) ? "Download video" : "Download image"}
             disabled={!token || !currentKey || downloading}
           >
             {downloading ? <Loader2 className="h-4 w-4 animate-spin text-foreground" /> : <Download className="h-4 w-4 text-foreground" />}
             <span className="text-xs font-medium text-foreground">Download</span>
           </Button>
+          {!isVideoS3Key(currentKey) ? (
+            <>
           <Button
             type="button"
             variant="ghost"
@@ -147,6 +151,24 @@ export function ImageCarouselStage({
             <Pencil className="h-4 w-4 text-foreground" />
             <span className="text-xs font-medium text-foreground">Edit image</span>
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (currentKey && urlQuery.data && onGenerateCampaignVideo) {
+                onGenerateCampaignVideo(currentKey, urlQuery.data);
+              }
+            }}
+            className="h-8 gap-2 rounded-md bg-background/80 px-2.5 shadow hover:bg-background disabled:opacity-50"
+            title="Generate video"
+            disabled={!currentKey || !urlQuery.data || !onGenerateCampaignVideo}
+          >
+            <Video className="h-4 w-4 text-foreground" />
+            <span className="text-xs font-medium text-foreground">Generate video</span>
+          </Button>
+            </>
+          ) : null}
           {title === "Edited Images" && (
             <Button
               type="button"
@@ -193,7 +215,14 @@ export function ImageCarouselStage({
           ) : urlQuery.isPending ? (
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           ) : urlQuery.isError || !urlQuery.data ? (
-            <div className="text-sm text-destructive">Failed to load image</div>
+            <div className="text-sm text-destructive">Failed to load media</div>
+          ) : isVideoS3Key(currentKey) ? (
+            <video
+              src={urlQuery.data}
+              controls
+              playsInline
+              className="max-h-full max-w-full object-contain"
+            />
           ) : (
             <img src={urlQuery.data} alt="" className="max-h-full max-w-full object-contain" />
           )}
@@ -235,6 +264,7 @@ export function FullscreenCarouselDialog({
   onManualPhotoEdit,
   onEditImage,
   onOpenTryOnWithJewellery,
+  onGenerateCampaignVideo,
 }: ImageCarouselProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -257,6 +287,7 @@ export function FullscreenCarouselDialog({
           onManualPhotoEdit={onManualPhotoEdit}
           onEditImage={onEditImage}
           onOpenTryOnWithJewellery={onOpenTryOnWithJewellery}
+          onGenerateCampaignVideo={onGenerateCampaignVideo}
         />
       </DialogContent>
     </Dialog>

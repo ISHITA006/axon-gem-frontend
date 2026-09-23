@@ -9,8 +9,11 @@ import {
   ChevronRight,
   RefreshCw,
   Save,
+  Video,
 } from "lucide-react";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
+import { FullscreenCarouselDialog } from "@/components/gallery/FullscreenCarouselDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -46,6 +49,7 @@ interface TryOnResultsProps {
   token: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
   /** Review session holding every generation for this shoot. */
   draft?: ModelShootDraft | null;
   activeGeneration?: ModelShootGeneration | null;
@@ -244,6 +248,7 @@ export default function TryOnResults({
   token,
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
   draft,
   activeGeneration,
   onSelectGeneration,
@@ -258,6 +263,8 @@ export default function TryOnResults({
   const { toast } = useToast();
   const [frontPrompt, setFrontPrompt] = useState("");
   const [closeUpPrompt, setCloseUpPrompt] = useState("");
+  const [carouselOpen, setCarouselOpen] = useState(false);
+  const [carouselStartIndex, setCarouselStartIndex] = useState(0);
 
   const activeUid = activeGeneration?.uid ?? null;
   const hasFront = Boolean(results?.front && results.frontKey);
@@ -349,6 +356,58 @@ export default function TryOnResults({
       : []),
   ];
 
+  /** Every unique still from this shoot (base look + regenerations) for catalogue add. */
+  const catalogueImages = (() => {
+    const seen = new Set<string>();
+    const images: Array<{ url: string; s3Key: string }> = [];
+    for (const gen of generations) {
+      for (const key of [gen.front_image_s3_key, gen.close_up_image_s3_key]) {
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        const activeMatch = imageItems.find((item) => item.s3Key === key);
+        images.push({ url: activeMatch?.url ?? "", s3Key: key });
+      }
+    }
+    return images.length > 0 ? images : imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }));
+  })();
+
+  const analysis = results?.analysis;
+  const catalogueDefaults = {
+    itemCode:
+      draft?.product_sku ||
+      (typeof analysis?.item_code === "string" ? analysis.item_code : undefined) ||
+      undefined,
+    name:
+      draft?.product_name ||
+      (typeof analysis?.name === "string" ? analysis.name : undefined) ||
+      undefined,
+    description: typeof analysis?.description === "string" ? analysis.description : undefined,
+  };
+
+  const openCampaignVideo = (s3Key: string, imageUrl: string) => {
+    if (!onOpenVideoShoot) return;
+    const extras = imageItems
+      .map((entry) => entry.s3Key)
+      .filter((key) => key && key !== s3Key)
+      .slice(0, 2);
+    onOpenVideoShoot({
+      s3Key,
+      imageUrl,
+      galleryUid: draft?.gallery_uid ?? null,
+      defaultMode: "on_model",
+      allowModeChange: false,
+      extraReferenceS3Keys: extras,
+    });
+  };
+
+  const carouselS3Keys = imageItems.map((item) => item.s3Key);
+  const carouselCaptions = Object.fromEntries(imageItems.map((item) => [item.s3Key, item.label]));
+
+  const openCarousel = (index: number) => {
+    setCarouselStartIndex(index);
+    setCarouselOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -357,12 +416,8 @@ export default function TryOnResults({
         </Button>
         <AddToCataloguePanel
           token={token}
-          images={imageItems.map((item) => ({ url: item.url, s3Key: item.s3Key }))}
-          defaults={{
-            itemCode: results?.analysis?.item_code || undefined,
-            name: results?.analysis?.name || undefined,
-            description: results?.analysis?.description || undefined,
-          }}
+          images={catalogueImages}
+          defaults={catalogueDefaults}
         />
       </div>
 
@@ -399,14 +454,22 @@ export default function TryOnResults({
         </CardHeader>
         <CardContent>
           <div className={`grid gap-6 ${bothViews ? "md:grid-cols-2" : "md:max-w-lg"}`}>
-            {imageItems.map((item) => (
+            {imageItems.map((item, index) => (
               <div key={item.label} className="space-y-3">
                 <p className="text-sm font-medium text-muted-foreground">{item.label}</p>
                 <div className="group relative overflow-hidden rounded-lg border shadow-sm">
-                  <img src={item.url} alt={item.label} className="w-full transition group-hover:scale-[1.01]" />
+                  <button
+                    type="button"
+                    onClick={() => openCarousel(index)}
+                    className="block w-full cursor-zoom-in text-left"
+                    title="View fullscreen"
+                  >
+                    <img src={item.url} alt={item.label} className="w-full transition group-hover:scale-[1.01]" />
+                  </button>
                   <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                     {onEditImage && (
                       <button
+                        type="button"
                         onClick={() => onEditImage(item.s3Key, item.url)}
                         className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
                         title="Edit image"
@@ -416,6 +479,7 @@ export default function TryOnResults({
                     )}
                     {onManualPhotoEdit && (
                       <button
+                        type="button"
                         onClick={() => onManualPhotoEdit(item.s3Key, item.url)}
                         className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
                         title="Manual photo editing"
@@ -423,6 +487,16 @@ export default function TryOnResults({
                         <SlidersHorizontal className="h-4 w-4 text-foreground" />
                       </button>
                     )}
+                    {onOpenVideoShoot ? (
+                      <button
+                        type="button"
+                        onClick={() => openCampaignVideo(item.s3Key, item.url)}
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Generate video"
+                      >
+                        <Video className="h-4 w-4 text-foreground" />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -544,6 +618,18 @@ export default function TryOnResults({
           </CardContent>
         </Card>
       )}
+      <FullscreenCarouselDialog
+        open={carouselOpen}
+        onOpenChange={setCarouselOpen}
+        token={token}
+        title="Try-on results"
+        s3Keys={carouselS3Keys}
+        captions={carouselCaptions}
+        startIndex={carouselStartIndex}
+        onEditImage={onEditImage}
+        onManualPhotoEdit={onManualPhotoEdit}
+        onGenerateCampaignVideo={onOpenVideoShoot ? openCampaignVideo : undefined}
+      />
     </div>
   );
 }

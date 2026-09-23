@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, FileDown, FileText, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, FileDown, FileText, Loader2, Scissors, Trash2, Video, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -10,6 +10,7 @@ import {
   apiListCatalogueItems,
   apiUpdateCatalogueItem,
   getPresignedUrl,
+  isVideoS3Key,
   type CatalogueFieldDefinition,
   type CatalogueItem,
 } from "@/lib/api";
@@ -28,9 +29,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DynamicCatalogueFields } from "@/components/catalogue/DynamicCatalogueFields";
+import { VideoTrimDialog } from "@/components/catalogue/VideoTrimDialog";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import { formatTableDate } from "@/lib/utils";
 
-export default function ManageCatalogue() {
+type Props = {
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
+};
+
+export default function ManageCatalogue({ onOpenVideoShoot }: Props) {
   const { token } = useAuth();
   const { toast } = useToast();
   const [fields, setFields] = useState<CatalogueFieldDefinition[]>([]);
@@ -47,6 +54,8 @@ export default function ManageCatalogue() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
+  const [selectedImageKey, setSelectedImageKey] = useState<string | null>(null);
+  const [trimImageUid, setTrimImageUid] = useState<string | null>(null);
 
   const filterableFields = useMemo(() => fields.filter((f) => f.filterable), [fields]);
 
@@ -141,8 +150,56 @@ export default function ManageCatalogue() {
     }
   };
 
+  const removeDetailImage = (imageUid: string) => {
+    if (!detail) return;
+    if (detail.images.length <= 1) {
+      toast({
+        title: "At least one media file",
+        description: "Keep at least one image or video on the catalogue item.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const removed = detail.images.find((img) => img.uid === imageUid);
+    const nextImages = detail.images.filter((img) => img.uid !== imageUid);
+    setDetail({ ...detail, images: nextImages });
+    if (removed && selectedImageKey === removed.image_s3_key) {
+      setSelectedImageKey(null);
+    }
+  };
+
+  const openTrimForImage = (imageUid: string, s3Key: string) => {
+    if (!token || !isVideoS3Key(s3Key)) return;
+    setTrimImageUid(imageUid);
+  };
+
+  const handleVideoTrimmed = (result: { videoS3Key: string; previewUrl?: string }) => {
+    if (!detail || !trimImageUid) return;
+    const prev = detail.images.find((img) => img.uid === trimImageUid);
+    const nextImages = detail.images.map((img) =>
+      img.uid === trimImageUid ? { ...img, image_s3_key: result.videoS3Key } : img,
+    );
+    setDetail({ ...detail, images: nextImages });
+    if (prev && selectedImageKey === prev.image_s3_key) {
+      setSelectedImageKey(result.videoS3Key);
+    }
+    setTrimImageUid(null);
+    toast({
+      title: "Video trimmed",
+      description: "Save the catalogue item to keep the trimmed clip.",
+    });
+  };
+
   const handleSaveDetail = async () => {
     if (!token || !detail) return;
+    if (!detail.images.length) {
+      toast({
+        title: "At least one media file",
+        description: "Keep at least one image or video on the catalogue item.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const updated = await apiUpdateCatalogueItem(token, detail.uid, {
@@ -185,6 +242,14 @@ export default function ManageCatalogue() {
   };
 
   if (selectedUid) {
+    const stillKeys =
+      detail?.images
+        ?.map((img) => img.image_s3_key)
+        .filter((key) => key && !isVideoS3Key(key)) ?? [];
+    const activeImageKey = selectedImageKey && stillKeys.includes(selectedImageKey)
+      ? selectedImageKey
+      : stillKeys[0] ?? null;
+
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -194,11 +259,31 @@ export default function ManageCatalogue() {
             onClick={() => {
               setSelectedUid(null);
               setDetail(null);
+              setSelectedImageKey(null);
             }}
           >
             <ArrowLeft className="h-4 w-4" /> Back to catalogue
           </Button>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={!token || !detail || !activeImageKey || !onOpenVideoShoot}
+              onClick={() => {
+                if (!detail || !activeImageKey || !onOpenVideoShoot) return;
+                onOpenVideoShoot({
+                  s3Key: activeImageKey,
+                  catalogueItemUid: detail.uid,
+                  productId: detail.item_code,
+                  defaultMode: "product",
+                  allowModeChange: true,
+                  extraReferenceS3Keys: stillKeys.filter((k) => k !== activeImageKey).slice(0, 2),
+                });
+              }}
+            >
+              <Video className="h-4 w-4" /> Generate video
+            </Button>
             <Button variant="outline" className="gap-2 text-destructive" onClick={() => void handleDelete()}>
               <Trash2 className="h-4 w-4" /> Delete
             </Button>
@@ -214,10 +299,54 @@ export default function ManageCatalogue() {
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="space-y-3">
               <h3 className="font-semibold">Images</h3>
+              <p className="text-xs text-muted-foreground">
+                Remove media with ×, trim videos with scissors, edit fields on the right, then Save.
+              </p>
               <div className="flex flex-wrap gap-3">
-                {detail.images.map((img) => (
-                  <CatalogueThumb key={img.uid} token={token} s3Key={img.image_s3_key} />
-                ))}
+                {detail.images.map((img) => {
+                  const selected = activeImageKey === img.image_s3_key;
+                  const isVideo = isVideoS3Key(img.image_s3_key);
+                  return (
+                    <div key={img.uid} className="relative shrink-0 pt-0.5">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="secondary"
+                        className="absolute left-1 top-1 z-10 h-7 w-7"
+                        title="Remove from catalogue item"
+                        disabled={detail.images.length <= 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeDetailImage(img.uid);
+                        }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                      {isVideo ? (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="secondary"
+                          className="absolute right-1 top-1 z-10 h-7 w-7"
+                          title="Trim video"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openTrimForImage(img.uid, img.image_s3_key);
+                          }}
+                        >
+                          <Scissors className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={`rounded-md border-2 ${selected ? "border-primary ring-2 ring-primary/20" : "border-transparent"}`}
+                        onClick={() => setSelectedImageKey(img.image_s3_key)}
+                      >
+                        <CatalogueThumb token={token} s3Key={img.image_s3_key} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="space-y-4">
@@ -253,6 +382,24 @@ export default function ManageCatalogue() {
             </div>
           </div>
         )}
+
+        {token && trimImageUid && detail
+          ? (() => {
+              const trimTarget = detail.images.find((img) => img.uid === trimImageUid);
+              if (!trimTarget) return null;
+              return (
+                <VideoTrimDialog
+                  open
+                  onOpenChange={(next) => {
+                    if (!next) setTrimImageUid(null);
+                  }}
+                  token={token}
+                  sourceS3Key={trimTarget.image_s3_key}
+                  onTrimmed={handleVideoTrimmed}
+                />
+              );
+            })()
+          : null}
       </div>
     );
   }
@@ -421,5 +568,8 @@ function CatalogueThumb({ token, s3Key }: { token: string | null; s3Key: string 
     void getPresignedUrl(token, s3Key).then(setUrl).catch(() => setUrl(""));
   }, [token, s3Key]);
   if (!url) return <div className="h-28 w-28 rounded bg-muted" />;
+  if (isVideoS3Key(s3Key)) {
+    return <video src={url} muted playsInline preload="metadata" className="h-28 w-28 rounded object-cover" />;
+  }
   return <img src={url} alt="" className="h-28 w-28 rounded object-cover" />;
 }
