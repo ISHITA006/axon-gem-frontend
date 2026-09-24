@@ -17,6 +17,10 @@ import {
   ensureCatalogueFonts,
   resolveCatalogueStyle,
 } from "@/lib/catalogueTemplates";
+import {
+  readCachedCatalogueTheme,
+  writeCachedCatalogueTheme,
+} from "@/lib/catalogueThemeCache";
 import { CatalogueItemZoom } from "@/components/catalogue/CatalogueItemZoom";
 import { BuyerCatalogueCardMedia } from "@/components/catalogue/BuyerCatalogueCardMedia";
 import {
@@ -33,7 +37,8 @@ import { useToast } from "@/hooks/use-toast";
 export default function CatalogueBrowse() {
   const { token, isAuthenticated, logout } = useCatalogViewerAuth();
   const { toast } = useToast();
-  const [theme, setTheme] = useState<CatalogueTheme | null>(null);
+  const [theme, setTheme] = useState<CatalogueTheme | null>(() => readCachedCatalogueTheme());
+  const [themeReady, setThemeReady] = useState(theme != null);
   const [fields, setFields] = useState<CatalogueFieldDefinition[]>([]);
   const [items, setItems] = useState<CatalogueItem[]>([]);
   const [page, setPage] = useState(1);
@@ -61,23 +66,30 @@ export default function CatalogueBrowse() {
   );
 
   useEffect(() => {
+    if (!themeReady) return;
     ensureCatalogueFonts(style);
-  }, [style.id]);
+  }, [themeReady, style.id]);
 
   useEffect(() => {
     if (!token) return;
     void apiCatalogViewTheme()
       .then(async (t) => {
         setTheme(t);
+        writeCachedCatalogueTheme(t);
         if (t.logo_s3_key) {
           try {
             setLogoUrl(await apiCatalogViewPresignedUrl(token, t.logo_s3_key));
           } catch {
             setLogoUrl("");
           }
+        } else {
+          setLogoUrl("");
         }
       })
-      .catch(() => setTheme(null));
+      .catch(() => {
+        /* keep cached theme if present */
+      })
+      .finally(() => setThemeReady(true));
     void apiCatalogViewFields(token).then(setFields).catch(() => setFields([]));
   }, [token]);
 
@@ -202,6 +214,15 @@ export default function CatalogueBrowse() {
   };
 
   if (!isAuthenticated || !token) return <Navigate to="/catalogue/login" replace />;
+
+  // Cold load with no cache: wait for API theme before painting themed chrome.
+  if (!themeReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-400">
+        <Loader2 className="h-7 w-7 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div

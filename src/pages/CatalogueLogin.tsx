@@ -8,6 +8,10 @@ import {
   resolveCatalogueStyle,
 } from "@/lib/catalogueTemplates";
 import {
+  readCachedCatalogueTheme,
+  writeCachedCatalogueTheme,
+} from "@/lib/catalogueThemeCache";
+import {
   CatalogueAmbientOrbs,
   CatalogueGlassPanel,
   CatalogueHairline,
@@ -24,19 +28,27 @@ export default function CatalogueLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [theme, setTheme] = useState<CatalogueTheme | null>(null);
+  const [theme, setTheme] = useState<CatalogueTheme | null>(() => readCachedCatalogueTheme());
+  const [themeReady, setThemeReady] = useState(theme != null);
 
   const style = useMemo(() => resolveCatalogueStyle(theme), [theme]);
 
   useEffect(() => {
     void apiCatalogViewTheme()
-      .then(setTheme)
-      .catch(() => setTheme(null));
+      .then((t) => {
+        setTheme(t);
+        writeCachedCatalogueTheme(t);
+      })
+      .catch(() => {
+        /* keep cached theme if present */
+      })
+      .finally(() => setThemeReady(true));
   }, []);
 
   useEffect(() => {
+    if (!themeReady) return;
     ensureCatalogueFonts(style);
-  }, [style.id]);
+  }, [themeReady, style.id]);
 
   if (isAuthenticated) return <Navigate to="/catalogue" replace />;
 
@@ -57,6 +69,15 @@ export default function CatalogueLogin() {
       setSubmitting(false);
     }
   };
+
+  // Cold load with no cache: wait for API theme before painting themed chrome.
+  if (!themeReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-400">
+        <Loader2 className="h-7 w-7 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div
