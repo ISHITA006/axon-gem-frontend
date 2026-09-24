@@ -9,12 +9,14 @@ import {
   RefreshCw,
   Save,
   SlidersHorizontal,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import { JewelleryReferencePicker, type JewelleryReferencePickerValue } from "@/components/JewelleryReferencePicker";
 import {
   downloadImage,
@@ -53,6 +55,7 @@ interface StudioShootResultsProps {
   progressLabel?: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
 }
 
 const MISMATCH_LABELS: Record<string, string> = {
@@ -241,6 +244,7 @@ export default function StudioShootResults({
   progressLabel,
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
 }: StudioShootResultsProps) {
   const { toast } = useToast();
   const [frontPrompt, setFrontPrompt] = useState("");
@@ -362,6 +366,23 @@ export default function StudioShootResults({
     description: typeof analysis?.description === "string" ? analysis.description : undefined,
   };
 
+  const openCampaignVideo = (s3Key: string, imageUrl: string) => {
+    if (!onOpenVideoShoot) return;
+    const extras = imageItems
+      .map((entry) => entry.s3Key)
+      .filter((key) => key && key !== s3Key)
+      .slice(0, 2);
+    onOpenVideoShoot({
+      s3Key,
+      imageUrl,
+      galleryUid: draft?.gallery_uid ?? null,
+      productId: draft?.product_sku ?? null,
+      defaultMode: "product",
+      allowModeChange: false,
+      extraReferenceS3Keys: extras,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -443,6 +464,16 @@ export default function StudioShootResults({
                         <SlidersHorizontal className="h-4 w-4 text-foreground" />
                       </button>
                     )}
+                    {onOpenVideoShoot ? (
+                      <button
+                        type="button"
+                        onClick={() => openCampaignVideo(item.s3Key, item.url)}
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Generate video"
+                      >
+                        <Video className="h-4 w-4 text-foreground" />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <Button

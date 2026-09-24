@@ -26,6 +26,7 @@ import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import StudioShootResults from "@/components/StudioShootResults";
 import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,12 +47,14 @@ import { cn } from "@/lib/utils";
 type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
   onViewQueue?: () => void;
 };
 
 export default function UploadStudioShoot({
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
   onViewQueue,
 }: Props) {
   const { token } = useAuth();
@@ -524,6 +527,7 @@ export default function UploadStudioShoot({
           loading={shooting}
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
+          onOpenVideoShoot={onOpenVideoShoot}
           onDraftChange={setDraft}
           onViewQueue={onViewQueue}
         />
@@ -537,6 +541,7 @@ export default function UploadStudioShoot({
         token={token}
         onEditImage={onEditImage}
         onManualPhotoEdit={onManualPhotoEdit}
+        onOpenVideoShoot={onOpenVideoShoot}
       />
     );
   }

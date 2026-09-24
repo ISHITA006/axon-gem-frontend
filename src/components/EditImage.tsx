@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, ImageIcon, Loader2, Pencil, SlidersHorizontal, Wand2, X } from "lucide-react";
+import { Download, ImageIcon, Loader2, Pencil, SlidersHorizontal, Video, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGenerationQueue } from "@/contexts/GenerationQueueContext";
 import {
@@ -21,6 +21,7 @@ import {
 import { createDisplayableImageObjectUrl } from "@/lib/heicImage";
 import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 
 type EditImageProps = {
   /** When set, this image is fetched and used as the source file (user does not need to upload). */
@@ -32,6 +33,7 @@ type EditImageProps = {
   sourceImageS3Key?: string | null;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
   onQueued?: () => void;
   onViewQueue?: () => void;
 };
@@ -53,6 +55,7 @@ export default function EditImage({
   sourceImageS3Key,
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
   onQueued,
   onViewQueue,
 }: EditImageProps) {
@@ -402,7 +405,7 @@ export default function EditImage({
                   alt="Edited result"
                   className="mx-auto max-h-[min(70vh,32rem)] w-full rounded-lg border object-contain shadow-sm"
                 />
-                {(onEditImage || onManualPhotoEdit) && resultS3Key ? (
+                {(onEditImage || onManualPhotoEdit || onOpenVideoShoot) && resultS3Key ? (
                   <div className="absolute right-2 top-2 flex items-center gap-2">
                     {onEditImage ? (
                       <button
@@ -422,6 +425,22 @@ export default function EditImage({
                         title="Manual photo editing"
                       >
                         <SlidersHorizontal className="h-4 w-4 text-foreground" />
+                      </button>
+                    ) : null}
+                    {onOpenVideoShoot ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenVideoShoot({
+                            s3Key: resultS3Key,
+                            imageUrl: resultUrl,
+                            allowModeChange: true,
+                          })
+                        }
+                        className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+                        title="Generate video"
+                      >
+                        <Video className="h-4 w-4 text-foreground" />
                       </button>
                     ) : null}
                   </div>

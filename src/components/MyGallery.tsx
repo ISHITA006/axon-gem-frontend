@@ -717,6 +717,7 @@ export default function MyGallery({
           backLabel="Back to gallery"
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
+          onOpenVideoShoot={onOpenVideoShoot}
         />
       );
     }

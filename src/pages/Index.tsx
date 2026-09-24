@@ -159,6 +159,7 @@ export default function Index() {
               <GenerationQueue
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onOpenVideoShoot={handleOpenVideoShoot}
                 onOpenModelPoses={() => setActiveTab("modelPoses")}
                 onOpenGallery={() => setActiveTab("gallery")}
               />
@@ -175,6 +176,7 @@ export default function Index() {
               <UploadStudioShoot
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onOpenVideoShoot={handleOpenVideoShoot}
                 onViewQueue={() => setActiveTab("generationQueue")}
               />
             )}
@@ -186,6 +188,7 @@ export default function Index() {
                 sourceImageS3Key={editImage?.s3Key ?? null}
                 onEditImage={handleEditImage}
                 onManualPhotoEdit={handleManualPhotoEdit}
+                onOpenVideoShoot={handleOpenVideoShoot}
                 onQueued={() => setEditImage(null)}
                 onViewQueue={() => setActiveTab("generationQueue")}
               />

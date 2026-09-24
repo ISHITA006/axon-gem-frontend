@@ -25,6 +25,7 @@ import {
 import ModelShootReviewSession from "@/components/ModelShootReviewSession";
 import ProductShootReviewSession from "@/components/ProductShootReviewSession";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 type Props = {
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
   onOpenModelPoses?: () => void;
   onOpenGallery?: () => void;
 };
@@ -125,6 +127,7 @@ function JobThumbnails({
 export default function GenerationQueue({
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
   onOpenModelPoses,
   onOpenGallery,
 }: Props) {
@@ -231,6 +234,7 @@ export default function GenerationQueue({
           backLabel="Back to queue"
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
+          onOpenVideoShoot={onOpenVideoShoot}
           onViewQueue={back}
         />
       );
@@ -244,6 +248,7 @@ export default function GenerationQueue({
           backLabel="Back to queue"
           onEditImage={onEditImage}
           onManualPhotoEdit={onManualPhotoEdit}
+          onOpenVideoShoot={onOpenVideoShoot}
           onViewQueue={back}
         />
       );

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import StudioShootResults from "@/components/StudioShootResults";
 import QueuedConfirmation, { queuedNoticeFromJob, type QueuedNotice } from "@/components/QueuedConfirmation";
 import type { ManualEditTool } from "@/components/ManualPhotoEditor";
+import type { VideoCampaignSource } from "@/components/VideoCampaignForm";
 import { useToast } from "@/hooks/use-toast";
 import { useGenerationQueueOptional } from "@/contexts/GenerationQueueContext";
 import {
@@ -33,6 +34,7 @@ type Props = {
   isActive?: boolean;
   onEditImage?: (s3Key: string, imageUrl: string) => void;
   onManualPhotoEdit?: (s3Key: string, imageUrl: string, initialTool?: ManualEditTool) => void;
+  onOpenVideoShoot?: (source: VideoCampaignSource) => void;
   onDraftChange?: (draft: ProductShootDraft) => void;
   onViewQueue?: () => void;
 };
@@ -75,6 +77,7 @@ export default function ProductShootReviewSession({
   isActive = true,
   onEditImage,
   onManualPhotoEdit,
+  onOpenVideoShoot,
   onDraftChange,
   onViewQueue,
 }: Props) {
@@ -295,6 +298,7 @@ export default function ProductShootReviewSession({
       loadingTitle={loadingDraft && !loading && !regenerating ? "Loading..." : undefined}
       onEditImage={onEditImage}
       onManualPhotoEdit={onManualPhotoEdit}
+      onOpenVideoShoot={onOpenVideoShoot}
     />
     </div>
   );

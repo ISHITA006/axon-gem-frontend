@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, ChevronLeft, ChevronRight, Download, Gem, Images, IndianRupee, Mail, Plus, SquareUser, Wand2, X } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Download, Gem, Images, IndianRupee, Mail, Plus, SquareUser, Video, Wand2, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -101,6 +101,14 @@ function formatModelSummary(byModel?: GenerationModelBreakdown): string {
 function formatSizeSummary(bySize?: Record<string, number>): string {
   if (!bySize) return "";
   return SIZE_KEYS
+    .filter((size) => (bySize[size] ?? 0) > 0)
+    .map((size) => `${bySize[size]} ${size}`)
+    .join(" · ");
+}
+
+function formatDurationSummary(bySize?: Record<string, number>): string {
+  if (!bySize) return "";
+  return (["8s", "15s"] as const)
     .filter((size) => (bySize[size] ?? 0) > 0)
     .map((size) => `${bySize[size]} ${size}`)
     .join(" · ");
@@ -286,11 +294,28 @@ export default function GenerationUsage() {
           modelSummary: "",
           sizeSummary: "",
         },
+        {
+          key: "videoShoot",
+          title: "Video shoot",
+          count: data.video_shoot ?? 0,
+          amount: data.billing.by_category.video_shoot ?? 0,
+          description: "Campaign videos — 8s ₹500 · 15s ₹800",
+          icon: Video,
+          barClass: "bg-orange-500",
+          iconClass: "text-orange-600",
+          cardClass: "border-orange-200/80",
+          modelSummary: "",
+          sizeSummary: formatDurationSummary(data.category_breakdown?.video_shoot?.by_image_size),
+        },
       ]
     : [];
 
   const total = data?.total ?? 0;
   const poseBilling = rateRowFor(data?.billing?.by_rate, "model_pose", "flat");
+  const videoBilling8s = rateRowFor(data?.billing?.by_rate, "video_shoot", "8s");
+  const videoBilling15s = rateRowFor(data?.billing?.by_rate, "video_shoot", "15s");
+  const videoBillingCount = videoBilling8s.count + videoBilling15s.count;
+  const videoBillingAmount = videoBilling8s.amount_inr + videoBilling15s.amount_inr;
   const modelChartTotal = data
     ? MODEL_LABELS.reduce((sum, model) => sum + (data.by_model[model.key] ?? 0), 0)
     : 0;
@@ -422,8 +447,9 @@ export default function GenerationUsage() {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Generation usage</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Successful image generations and live billing for this account, by category, model, and
-            output quality. A PDF invoice is emailed on the 1st of each month for the previous month.
+            Successful image and video generations and live billing for this account, by category,
+            model, and output quality. A PDF invoice is emailed on the 1st of each month for the
+            previous month.
           </p>
         </div>
         <div className="grid w-full grid-cols-1 gap-2 sm:max-w-sm">
@@ -493,7 +519,8 @@ export default function GenerationUsage() {
       {isLoading && (
         <div className="space-y-4">
           <Skeleton className="h-40 w-full" />
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <Skeleton className="h-32" />
             <Skeleton className="h-32" />
             <Skeleton className="h-32" />
             <Skeleton className="h-32" />
@@ -650,7 +677,7 @@ export default function GenerationUsage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             {categories.map((category) => {
               const Icon = category.icon;
               const percent = share(category.count, total);
@@ -689,8 +716,8 @@ export default function GenerationUsage() {
                 <CardTitle className="text-base">By model</CardTitle>
                 <CardDescription>
                   Shoot and edit generations only. If Nano Banana Pro returned an image even once,
-                  the generation is counted as Pro. Otherwise it is Nano Banana 2. Model pose is
-                  billed separately.
+                  the generation is counted as Pro. Otherwise it is Nano Banana 2. Model pose and
+                  video are billed separately.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -714,7 +741,7 @@ export default function GenerationUsage() {
                 <CardTitle className="text-base">By image size</CardTitle>
                 <CardDescription>
                   Requested output quality for shoot and edit generations. Model pose is a flat
-                  ₹25 and is not split by size.
+                  ₹25 and video is billed by duration — neither is split by image size.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -746,7 +773,7 @@ export default function GenerationUsage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
                 {BILLING_TIERS.map((tier) => {
                   const rows = SIZE_KEYS.map((size) => rateRowFor(data.billing.by_rate, tier.model, size));
                   const subtotal = rows.reduce((sum, row) => sum + row.amount_inr, 0);
@@ -811,6 +838,40 @@ export default function GenerationUsage() {
                     </div>
                   </div>
                 </div>
+                <div className="rounded-lg border">
+                  <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Video shoot</p>
+                      <p className="text-xs text-muted-foreground">Campaign videos</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold tabular-nums">{formatInr(videoBillingAmount)}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {videoBillingCount} {videoBillingCount === 1 ? "video" : "videos"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    {([
+                      { row: videoBilling8s, label: "8s", dot: "bg-orange-400" },
+                      { row: videoBilling15s, label: "15s", dot: "bg-orange-600" },
+                    ] as const).map(({ row, label, dot }) => (
+                      <div
+                        key={label}
+                        className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5 text-sm"
+                      >
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <span className={`h-2 w-2 rounded-full ${dot}`} />
+                          {label}
+                        </span>
+                        <span className="text-muted-foreground tabular-nums">
+                          {formatInr(row.unit_price_inr || (label === "8s" ? 500 : 800))} × {row.count}
+                        </span>
+                        <span className="tabular-nums font-medium">{formatInr(row.amount_inr)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
               {data.billing.unpriced_count > 0 ? (
                 <p className="text-xs text-muted-foreground">
@@ -846,15 +907,20 @@ export default function GenerationUsage() {
                 the model library, and regenerating a specific model pose.
               </p>
               <p>
+                Each successful campaign video counts as 1 generation and is billed by duration:
+                ₹500 for 8s and ₹800 for 15s.
+              </p>
+              <p>
                 Model attribution: Nano Banana Pro if it returned an image even once for that
                 generation. If Pro returned 500/503 or no image, the generation is attributed to
-                Nano Banana 2. Model pose is not attributed this way — it is always billed at the
-                flat model-pose rate.
+                Nano Banana 2. Model pose and video are not attributed this way — they use their
+                own flat or duration rates.
               </p>
               <p>
                 Billing is calculated live from the current rate chart: Standard (Nano Banana 2) is
                 ₹50 for 1K, ₹70 for 2K, and ₹100 for 4K. Premium (Nano Banana Pro) is ₹100 for 1K
-                and 2K, and ₹130 for 4K. Model pose generation is ₹25 per image.
+                and 2K, and ₹130 for 4K. Model pose generation is ₹25 per image. Video shoot is
+                ₹500 for 8s and ₹800 for 15s.
               </p>
               <p>
                 On the 1st of every month at 9:00 AM IST, a PDF invoice for the previous month is
